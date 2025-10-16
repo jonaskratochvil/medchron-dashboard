@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedChron Dashboard Demo</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/lucide-static@0.294.0/font/lucide.css">
+    <style>
+        .lucide { width: 20px; height: 20px; }
+        .lucide-sm { width: 16px; height: 16px; }
+        .lucide-lg { width: 24px; height: 24px; }
+        .lucide-xl { width: 32px; height: 32px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback, createContext, useContext } = React;
+
+        // Mock Data Generators
+        const users = [
+            { id: '1', name: 'Olivia Carter' },
+            { id: '2', name: 'Marcus Bennett' },
+            { id: '3', name: 'Harper Reed' },
+            { id: '4', name: 'System Admin' },
+        ];
+
+        const projectNames = [
+            'Baker v. Ridgeview Apartments', 'Ramos v. Northgate Superstore',
+            'Parker v. Sunrise Daycare Center', 'Flores v. Capital Mall Management',
+            'Thompson v. Lakeside School District', 'Mitchell v. Clearview Golf Club',
+            'Rivera v. Cascade Transit Authority', 'Grant v. Horizon Delivery Services',
+            'Brooks v. Valley Hospital Corporation', 'Dixon v. Elm Street Pharmacy',
+        ];
+
+        const medicalDocTypes = [
+            'Medical Records', 'Admission Records', 'Discharge Summary',
+            'Treatment Summary', 'Physician Notes', 'Radiology Report',
+        ];
+
+        const folders = [
+            'Discovery', 'Depositions', 'Medical Records', 'Correspondence',
+            'Research', 'Evidence', 'Work Product',
+        ];
+
+        function generateStatus() {
+            const rand = Math.random();
+            if (rand < 0.5) return { kind: 'completed' };
+            if (rand < 0.65) {
+                const total = Math.floor(Math.random() * 50) + 10;
+                const processed = Math.floor(Math.random() * total);
+                return { kind: 'in_progress', processed, total };
+            }
+            if (rand < 0.75) return { kind: 'pending' };
+            if (rand < 0.85) return { kind: 'review', pendingCount: Math.floor(Math.random() * 15) + 1 };
+            return { kind: 'not_initiated' };
+        }
+
+        function generateMockProjects(count = 274) {
+            const projects = [];
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 6);
+
+            for (let i = 0; i < count; i++) {
+                const status = generateStatus();
+                const hasBeenInitiated = status.kind !== 'not_initiated';
+                const user = hasBeenInitiated ? users[Math.floor(Math.random() * users.length)] : null;
+                
+                projects.push({
+                    projectId: `proj-${i + 1}`,
+                    projectName: projectNames[i % projectNames.length] + (i >= projectNames.length ? ` (${Math.floor(i / projectNames.length) + 1})` : ''),
+                    status,
+                    initiatedBy: user,
+                    initiatedAt: hasBeenInitiated ? new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime())).toISOString() : null,
+                });
+            }
+
+            return projects.sort((a, b) => {
+                if (!a.initiatedAt && !b.initiatedAt) return 0;
+                if (!a.initiatedAt) return 1;
+                if (!b.initiatedAt) return -1;
+                return new Date(b.initiatedAt).getTime() - new Date(a.initiatedAt).getTime();
+            });
+        }
+
+        function generateMockDocuments() {
+            const documents = [];
+            folders.forEach((folder, folderIndex) => {
+                const folderNode = {
+                    docId: `folder-${folderIndex}`,
+                    fileName: folder,
+                    isFolder: true,
+                    included: true,
+                    children: [],
+                };
+
+                const docCount = Math.floor(Math.random() * 8) + 2;
+                for (let i = 0; i < docCount; i++) {
+                    const isMedical = folder === 'Medical Records' || Math.random() > 0.7;
+                    const fileName = isMedical
+                        ? `Smith_v_MercyHospital_${medicalDocTypes[Math.floor(Math.random() * medicalDocTypes.length)]}.pdf`
+                        : `Document_${folderIndex}_${i}.docx`;
+
+                    folderNode.children.push({
+                        docId: `doc-${folderIndex}-${i}`,
+                        fileName,
+                        uploadedBy: users[Math.floor(Math.random() * users.length)].name,
+                        uploadedAt: new Date().toISOString(),
+                        included: isMedical,
+                    });
+                }
+                documents.push(folderNode);
+            });
+            return documents;
+        }
+
+        function getStatusColor(status) {
+            switch (status.kind) {
+                case 'completed': return 'bg-green-100 text-green-800 border-green-300';
+                case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-300';
+                case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+                case 'review': return 'bg-purple-100 text-purple-800 border-purple-300';
+                case 'not_initiated': return 'bg-gray-100 text-gray-600 border-gray-300';
+                default: return 'bg-gray-100 text-gray-600 border-gray-300';
+            }
+        }
+
+        function getStatusLabel(status) {
+            switch (status.kind) {
+                case 'completed': return 'Completed';
+                case 'in_progress': return `In progress - ${Math.round((status.processed / status.total) * 100)}%`;
+                case 'pending': return 'Pending';
+                case 'review': return `Review (${status.pendingCount})`;
+                case 'not_initiated': return 'Not initiated';
+                default: return 'Unknown';
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '--';
+            return new Date(dateString).toLocaleDateString('en-US', { 
+                month: '2-digit', 
+                day: '2-digit', 
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        }
+
+        // Context
+        const AppContext = createContext();
+
+        function AppProvider({ children }) {
+            const [projects, setProjects] = useState(() => generateMockProjects());
+            const [selectedProjects, setSelectedProjects] = useState(new Set());
+            const [currentView, setCurrentView] = useState('dashboard');
+            const [currentProjectId, setCurrentProjectId] = useState(null);
+
+            const updateProjectStatus = useCallback((projectId, status) => {
+                setProjects(prev => prev.map(p =>
+                    p.projectId === projectId ? { ...p, status } : p
+                ));
+            }, []);
+
+            const initiateProjects = useCallback((projectIds) => {
+                const now = new Date().toISOString();
+                const user = { id: 'current', name: 'Current User' };
+
+                setProjects(prev => prev.map(project => {
+                    if (projectIds.includes(project.projectId)) {
+                        return { ...project, status: { kind: 'pending' }, initiatedAt: now, initiatedBy: user };
+                    }
+                    return project;
+                }));
+
+                projectIds.forEach((projectId, index) => {
+                    setTimeout(() => {
+                        const total = Math.floor(Math.random() * 30) + 20;
+                        updateProjectStatus(projectId, { kind: 'in_progress', processed: 0, total });
+                        
+                        let progress = 0;
+                        const interval = setInterval(() => {
+                            progress += Math.floor(Math.random() * 5) + 1;
+                            if (progress >= total) {
+                                updateProjectStatus(projectId, { kind: 'completed' });
+                                clearInterval(interval);
+                            } else {
+                                updateProjectStatus(projectId, { kind: 'in_progress', processed: progress, total });
+                            }
+                        }, 1000);
+                    }, (index + 1) * 2000);
+                });
+            }, [updateProjectStatus]);
+
+            return (
+                <AppContext.Provider value={{
+                    projects, selectedProjects, setSelectedProjects,
+                    currentView, setCurrentView, currentProjectId, setCurrentProjectId,
+                    initiateProjects, updateProjectStatus
+                }}>
+                    {children}
+                </AppContext.Provider>
+            );
+        }
+
+        // Components
+        function StatusBadge({ status }) {
+            return (
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium border ${getStatusColor(status)}`}>
+                    {getStatusLabel(status)}
+                </span>
+            );
+        }
+
+        function Dashboard() {
+            const { projects, selectedProjects, setSelectedProjects, setCurrentView, setCurrentProjectId, initiateProjects } = useContext(AppContext);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [statusFilter, setStatusFilter] = useState(new Set());
+            const [currentPage, setCurrentPage] = useState(1);
+            const [showConfirmModal, setShowConfirmModal] = useState(false);
+            const pageSize = 10;
+
+            const stats = useMemo(() => ({
+                completed: projects.filter(p => p.status.kind === 'completed').length,
+                inProgress: projects.filter(p => p.status.kind === 'in_progress').length,
+                pending: projects.filter(p => p.status.kind === 'pending').length,
+                notInitiated: projects.filter(p => p.status.kind === 'not_initiated').length,
+                review: projects.filter(p => p.status.kind === 'review').length,
+            }), [projects]);
+
+            const filteredProjects = useMemo(() => {
+                return projects.filter(project => {
+                    const matchesSearch = project.projectName.toLowerCase().includes(searchTerm.toLowerCase());
+                    const matchesStatus = statusFilter.size === 0 || statusFilter.has(project.status.kind);
+                    return matchesSearch && matchesStatus;
+                });
+            }, [projects, searchTerm, statusFilter]);
+
+            const paginatedProjects = useMemo(() => {
+                const startIndex = (currentPage - 1) * pageSize;
+                return filteredProjects.slice(startIndex, startIndex + pageSize);
+            }, [filteredProjects, currentPage]);
+
+            const totalPages = Math.ceil(filteredProjects.length / pageSize);
+
+            const handleSelectAll = () => {
+                if (selectedProjects.size === paginatedProjects.length) {
+                    setSelectedProjects(new Set());
+                } else {
+                    setSelectedProjects(new Set(paginatedProjects.map(p => p.projectId)));
+                }
+            };
+
+            const handleInitiate = () => {
+                initiateProjects(Array.from(selectedProjects));
+                setSelectedProjects(new Set());
+                setShowConfirmModal(false);
+            };
+
+            return (
+                <div className="p-6">
+                    <h1 className="text-2xl font-bold text-gray-900 mb-6">MedChron Dashboard</h1>
+                    
+                    <div className="grid grid-cols-5 gap-4 mb-6">
+                        <div className="bg-white rounded-lg border p-4">
+                            <div className="text-3xl font-bold text-gray-900">{stats.completed}</div>
+                            <div className="text-sm text-gray-600">Completed</div>
+                        </div>
+                        <div className="bg-white rounded-lg border p-4">
+                            <div className="text-3xl font-bold text-gray-900">{stats.inProgress}</div>
+                            <div className="text-sm text-gray-600">In progress</div>
+                        </div>
+                        <div className="bg-white rounded-lg border p-4">
+                            <div className="text-3xl font-bold text-gray-900">{stats.pending}</div>
+                            <div className="text-sm text-gray-600">Pending</div>
+                        </div>
+                        <div className="bg-white rounded-lg border p-4">
+                            <div className="text-3xl font-bold text-gray-900">{stats.notInitiated}</div>
+                            <div className="text-sm text-gray-600">Not initiated</div>
+                        </div>
+                        <div className="bg-white rounded-lg border p-4">
+                            <div className="text-3xl font-bold text-gray-900">{stats.review}</div>
+                            <div className="text-sm text-gray-600">Review</div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg border">
+                        <div className="p-4 border-b">
+                            <div className="flex items-center justify-between mb-4">
+                                <input
+                                    type="text"
+                                    placeholder="Search by project name"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="flex-1 pl-10 pr-3 py-2 border rounded-lg"
+                                />
+                                {selectedProjects.size > 0 && (
+                                    <button
+                                        onClick={() => setShowConfirmModal(true)}
+                                        className="ml-4 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600"
+                                    >
+                                        Initiate ({selectedProjects.size})
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                                <span className="text-sm text-gray-600">Filter by status:</span>
+                                {['completed', 'in_progress', 'pending', 'not_initiated', 'review'].map(status => (
+                                    <button
+                                        key={status}
+                                        onClick={() => {
+                                            const newSet = new Set(statusFilter);
+                                            if (newSet.has(status)) newSet.delete(status);
+                                            else newSet.add(status);
+                                            setStatusFilter(newSet);
+                                        }}
+                                        className={`px-3 py-1 text-xs rounded-full border ${
+                                            statusFilter.has(status) ? 'bg-cyan-100 text-cyan-700' : 'bg-white text-gray-600'
+                                        }`}
+                                    >
+                                        {status.replace('_', ' ')}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <table className="w-full">
+                            <thead className="bg-gray-50 border-b">
+                                <tr>
+                                    <th className="w-12 px-4 py-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedProjects.size === paginatedProjects.length && paginatedProjects.length > 0}
+                                            onChange={handleSelectAll}
+                                        />
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Project name</th>
+                                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">MedChron status</th>
+                                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Initiation date</th>
+                                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Initiated by</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                                {paginatedProjects.map((project) => (
+                                    <tr key={project.projectId} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedProjects.has(project.projectId)}
+                                                onChange={() => {
+                                                    const newSet = new Set(selectedProjects);
+                                                    if (newSet.has(project.projectId)) newSet.delete(project.projectId);
+                                                    else newSet.add(project.projectId);
+                                                    setSelectedProjects(newSet);
+                                                }}
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <button
+                                                onClick={() => {
+                                                    setCurrentProjectId(project.projectId);
+                                                    setCurrentView('verification');
+                                                }}
+                                                className="text-blue-600 hover:underline font-medium"
+                                            >
+                                                {project.projectName}
+                                            </button>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <StatusBadge status={project.status} />
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{formatDate(project.initiatedAt)}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{project.initiatedBy?.name || '--'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        <div className="p-4 border-t flex justify-between">
+                            <div className="text-sm text-gray-600">
+                                {filteredProjects.length > 0 
+                                    ? `${(currentPage - 1) * pageSize + 1} to ${Math.min(currentPage * pageSize, filteredProjects.length)} of ${filteredProjects.length} MedChrons`
+                                    : 'No projects found'}
+                            </div>
+                            <div className="flex space-x-1">
+                                <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="px-2 py-1 border rounded disabled:opacity-50">≪</button>
+                                <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className="px-2 py-1 border rounded disabled:opacity-50">‹</button>
+                                <span className="px-3 py-1 text-sm">Page {currentPage} of {totalPages || 1}</span>
+                                <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className="px-2 py-1 border rounded disabled:opacity-50">›</button>
+                                <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className="px-2 py-1 border rounded disabled:opacity-50">≫</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {showConfirmModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 max-w-md">
+                                <h3 className="text-lg font-semibold mb-4">Confirm Bulk Initiation</h3>
+                                <p className="text-gray-600 mb-6">
+                                    You are about to initiate MedChron for {selectedProjects.size} project{selectedProjects.size > 1 ? 's' : ''}.
+                                </p>
+                                <div className="flex space-x-3 justify-end">
+                                    <button onClick={() => setShowConfirmModal(false)} className="px-4 py-2 border rounded-lg">Cancel</button>
+                                    <button onClick={handleInitiate} className="px-4 py-2 bg-cyan-500 text-white rounded-lg">Initiate MedChron</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function ProjectVerification() {
+            const { projects, currentProjectId, setCurrentView, updateProjectStatus } = useContext(AppContext);
+            const [documents, setDocuments] = useState(() => generateMockDocuments());
+            const [expandedFolders, setExpandedFolders] = useState(new Set(documents.map(d => d.docId)));
+            
+            const project = projects.find(p => p.projectId === currentProjectId);
+            const includedCount = documents.reduce((sum, folder) => 
+                sum + (folder.children?.filter(d => d.included).length || 0), 0);
+
+            const handleRun = () => {
+                if (!currentProjectId) return;
+                updateProjectStatus(currentProjectId, { kind: 'pending' });
+                
+                setTimeout(() => {
+                    let progress = 0;
+                    const total = includedCount;
+                    updateProjectStatus(currentProjectId, { kind: 'in_progress', processed: 0, total });
+                    
+                    const interval = setInterval(() => {
+                        progress += Math.floor(Math.random() * 3) + 1;
+                        if (progress >= total) {
+                            updateProjectStatus(currentProjectId, { kind: 'completed' });
+                            clearInterval(interval);
+                        } else {
+                            updateProjectStatus(currentProjectId, { kind: 'in_progress', processed: progress, total });
+                        }
+                    }, 1000);
+                }, 2000);
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-50">
+                    <div className="bg-white border-b px-6 py-4">
+                        <button onClick={() => setCurrentView('dashboard')} className="text-gray-600 hover:text-gray-900">
+                            ← Back to Dashboard
+                        </button>
+                    </div>
+
+                    <div className="px-6 py-4">
+                        <div className="mb-6">
+                            <h1 className="text-2xl font-bold text-gray-900 mb-2">{project?.projectName}</h1>
+                            <div className="flex items-center space-x-4">
+                                <span className="text-sm text-gray-600">MedChron Status:</span>
+                                {project && <StatusBadge status={project.status} />}
+                                {project?.status.kind !== 'in_progress' && (
+                                    <button onClick={handleRun} disabled={includedCount === 0}
+                                        className={`ml-auto px-4 py-2 rounded-lg font-medium ${
+                                            includedCount > 0 ? 'bg-cyan-500 text-white' : 'bg-gray-300 text-gray-500'
+                                        }`}>
+                                        Initiate MedChron ({includedCount} files)
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {project?.status.kind === 'in_progress' && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                                <div className="flex justify-between mb-2">
+                                    <span className="text-sm font-medium text-blue-900">Processing Documents</span>
+                                    <span className="text-sm text-blue-700">{project.status.processed} / {project.status.total}</span>
+                                </div>
+                                <div className="w-full bg-blue-100 rounded-full h-2">
+                                    <div className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                        style={{ width: `${(project.status.processed / project.status.total) * 100}%` }} />
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="bg-white rounded-lg border">
+                            <div className="p-4 border-b">
+                                <h2 className="text-lg font-semibold">Source documents</h2>
+                                <p className="text-sm text-gray-600">{includedCount} documents will be included</p>
+                            </div>
+                            
+                            <div className="divide-y">
+                                {documents.map((folder) => (
+                                    <div key={folder.docId}>
+                                        <div className="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                            onClick={() => {
+                                                const newSet = new Set(expandedFolders);
+                                                if (newSet.has(folder.docId)) newSet.delete(folder.docId);
+                                                else newSet.add(folder.docId);
+                                                setExpandedFolders(newSet);
+                                            }}>
+                                            <span className="mr-2">{expandedFolders.has(folder.docId) ? '▼' : '▶'}</span>
+                                            <span className="font-medium">{folder.fileName}</span>
+                                            <span className="ml-2 text-sm text-gray-500">
+                                                ({folder.children?.filter(d => d.included).length || 0} included)
+                                            </span>
+                                        </div>
+                                        {expandedFolders.has(folder.docId) && folder.children && (
+                                            <div className="bg-gray-50">
+                                                {folder.children.map((doc) => (
+                                                    <div key={doc.docId} className="flex items-center px-8 py-2 hover:bg-gray-100">
+                                                        <input type="checkbox" checked={doc.included}
+                                                            onChange={() => {
+                                                                setDocuments(prev => prev.map(f => ({
+                                                                    ...f,
+                                                                    children: f.children?.map(d => 
+                                                                        d.docId === doc.docId ? { ...d, included: !d.included } : d
+                                                                    )
+                                                                })));
+                                                            }}
+                                                            className="mr-3" />
+                                                        <div className="flex-1">
+                                                            <div className="text-sm font-medium">{doc.fileName}</div>
+                                                            <div className="text-xs text-gray-500">Uploaded by {doc.uploadedBy}</div>
+                                                        </div>
+                                                        <span className={`text-xs ${doc.included ? 'text-green-600' : 'text-gray-400'}`}>
+                                                            {doc.included ? '✓ Included' : '✗ Excluded'}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function Header() {
+            return (
+                <header className="bg-gray-900 text-white">
+                    <div className="flex items-center justify-between px-6 h-14">
+                        <div className="flex items-center space-x-4">
+                            <span className="text-lg">☰</span>
+                            <div className="flex items-center space-x-6">
+                                <span>Feed</span>
+                                <span>Tasks</span>
+                                <span>Projects</span>
+                                <span>Documents</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                            <div className="text-2xl font-bold">Filevine</div>
+                            <input type="text" placeholder="Search..." className="bg-gray-800 px-4 py-1.5 rounded w-64 text-sm" />
+                        </div>
+                    </div>
+                </header>
+            );
+        }
+
+        function App() {
+            const { currentView } = useContext(AppContext);
+            
+            return (
+                <div className="min-h-screen bg-gray-50">
+                    <Header />
+                    <div className="flex">
+                        {currentView === 'dashboard' && (
+                            <aside className="w-64 bg-white border-r min-h-screen">
+                                <div className="p-4">
+                                    <div className="bg-cyan-50 text-cyan-600 px-3 py-2 rounded font-medium">
+                                        MedChron Dashboard
+                                    </div>
+                                </div>
+                            </aside>
+                        )}
+                        <main className="flex-1">
+                            {currentView === 'dashboard' ? <Dashboard /> : <ProjectVerification />}
+                        </main>
+                    </div>
+                </div>
+            );
+        }
+
+        function Root() {
+            return (
+                <AppProvider>
+                    <App />
+                </AppProvider>
+            );
+        }
+
+        ReactDOM.render(<Root />, document.getElementById('root'));
+    </script>
+</body>
+</html>

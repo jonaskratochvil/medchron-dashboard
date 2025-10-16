@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedChron Dashboard - Polished UX</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif; }
+        .status-badge { font-size: 11px; padding: 3px 10px; }
+        input[type="checkbox"]:indeterminate {
+            background-image: linear-gradient(45deg, #3b82f6 25%, transparent 25%, transparent 75%, #3b82f6 75%, #3b82f6);
+            background-size: 2px 2px;
+        }
+        .tree-row:hover { background-color: #f7f8fa; }
+        .locked-checkbox { cursor: not-allowed !important; opacity: 0.5; }
+        .locked-row { opacity: 0.7; cursor: not-allowed; }
+        .tooltip { position: relative; }
+        .tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a1a1a;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1000;
+            margin-bottom: 5px;
+        }
+        .tooltip:hover::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border-top: 5px solid #1a1a1a;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            z-index: 1000;
+        }
+        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .slide-in { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn {
+            from { transform: translateY(-10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .change-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .added { background: #dcfce7; color: #166534; }
+        .removed { background: #fee2e2; color: #991b1b; text-decoration: line-through; }
+        .progress-bar {
+            transition: width 0.5s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-white">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback, createContext, useContext, useRef } = React;
+
+        // Simplified status types
+        const STATUS_TYPES = {
+            NOT_INITIATED: 'not_initiated',
+            IN_PROGRESS: 'in_progress',
+            COMPLETE: 'complete'
+        };
+
+        // Mock Data
+        const users = [
+            { id: '1', name: 'Olivia Carter' },
+            { id: '2', name: 'Marcus Bennett' },
+            { id: '3', name: 'Harper Reed' },
+        ];
+
+        const projectNames = [
+            'Anderson v. Memorial Hospital', 'Bennett v. City Transit Authority', 'Carter v. Walmart Inc.',
+            'Davis v. State Farm Insurance', 'Edwards v. Amazon Logistics', 'Foster v. Target Corporation',
+            'Garcia v. FedEx Ground', 'Harris v. United Healthcare', 'Jackson v. Home Depot',
+            'Johnson v. Progressive Insurance', 'King v. CVS Pharmacy', 'Lee v. Costco Wholesale',
+            'Martinez v. Kaiser Permanente', 'Miller v. Safeway Stores', 'Moore v. Wells Fargo Bank',
+            'Nelson v. Chase Bank', 'O\'Brien v. Bank of America', 'Peterson v. Allstate Insurance',
+            'Quinn v. Enterprise Rent-A-Car', 'Roberts v. Hertz Corporation', 'Smith v. Liberty Mutual',
+            'Taylor v. GEICO Insurance', 'Thomas v. Blue Cross Blue Shield', 'Turner v. Anthem Inc.',
+            'Walker v. Aetna Health', 'White v. Cigna Corporation', 'Williams v. Humana Inc.',
+            'Wilson v. UnitedHealth Group', 'Young v. Molina Healthcare', 'Zimmerman v. Centene Corp',
+            'Adams v. St. Joseph Medical', 'Bailey v. Regional Medical Center', 'Campbell v. Sacred Heart Hospital',
+            'Douglas v. Mercy General Hospital', 'Evans v. Sharp Healthcare', 'Franklin v. Adventist Health',
+            'Gibson v. Dignity Health', 'Henderson v. Sutter Health', 'Irving v. Stanford Health Care',
+            'Jenkins v. UCLA Medical Center', 'Kelly v. Cedars-Sinai', 'Lewis v. Mayo Clinic',
+            'Morgan v. Cleveland Clinic', 'Norton v. Johns Hopkins', 'Oliver v. Mass General',
+            'Parker v. Mount Sinai Health', 'Quinn v. NYU Langone', 'Richardson v. Northwestern Medicine',
+            'Stevens v. Rush University Medical', 'Thompson v. Houston Methodist', 'Underwood v. Baylor Scott & White',
+            'Vincent v. Intermountain Healthcare', 'Watson v. HCA Healthcare', 'Xavier v. Tenet Healthcare',
+            'Yates v. Community Health Systems', 'Zamora v. Universal Health Services', 'Abbott v. Lab Corp',
+            'Brown v. Quest Diagnostics', 'Clark v. Walgreens Boots', 'Dixon v. Rite Aid Corporation',
+            'Ellis v. Kroger Pharmacy', 'Fisher v. Publix Pharmacy', 'Graham v. Meijer Pharmacy',
+            'Hall v. HEB Pharmacy', 'Ingram v. Wegmans Pharmacy', 'Jones v. Giant Eagle Pharmacy',
+            'Klein v. ShopRite Pharmacy', 'Lambert v. Stop & Shop', 'Mason v. Food Lion',
+            'Nash v. Harris Teeter', 'Owens v. Whole Foods Market', 'Patel v. Trader Joe\'s',
+            'Quinn v. ALDI Stores', 'Ross v. Dollar General', 'Scott v. Dollar Tree',
+            'Torres v. Family Dollar', 'Upton v. 7-Eleven Inc', 'Valdez v. Circle K Stores',
+            'Wagner v. Speedway LLC', 'Xu v. Marathon Petroleum', 'York v. Shell Oil Company',
+            'Zhao v. ExxonMobil', 'Allen v. Chevron Corporation', 'Barnes v. BP America',
+            'Coleman v. ConocoPhillips', 'Diaz v. Valero Energy', 'Espinoza v. Phillips 66',
+            'Fleming v. Occidental Petroleum', 'Gonzalez v. Halliburton', 'Hughes v. Schlumberger',
+            'Iyer v. Baker Hughes', 'Jackson v. Weatherford', 'Kumar v. National Oilwell',
+            'Lopez v. Apache Corporation', 'Mitchell v. EOG Resources', 'Nguyen v. Pioneer Natural',
+            'O\'Connor v. Devon Energy', 'Perez v. Anadarko Petroleum', 'Quinn v. Noble Energy',
+            'Rodriguez v. Hess Corporation', 'Singh v. Marathon Oil', 'Taylor v. Continental Resources',
+            'Unger v. Diamondback Energy', 'Vargas v. Concho Resources', 'Wang v. Parsley Energy',
+            'Xiong v. WPX Energy', 'Young v. Cimarex Energy', 'Zhang v. Cabot Oil & Gas'
+        ];
+
+        const documentTypes = {
+            Discovery: ['PlaintiffSmithTranscript', 'DoctorJonesTranscript', 'Document_1', 'Document_2', 'MedicalRecord_2'],
+            Depositions: ['PlaintiffSmithTranscript', 'DefendantObjections', 'VerifiedAnswers'],
+            Disclosures: ['TreatingPhysicians', 'Document_1'],
+            'Expert Discovery': ['ReportDrRivera'],
+            'Medical Records': ['AdmissionRecords', 'OrthopedicProgressNotes', 'NeurologyOfficeVisit', 'TreatmentSummary', 'PharmacyRXHistory'],
+        };
+
+        function generateStatus() {
+            const rand = Math.random();
+            if (rand < 0.5) return { kind: STATUS_TYPES.COMPLETE };
+            if (rand < 0.75) {
+                const total = Math.floor(Math.random() * 30) + 10;
+                const processed = Math.floor(Math.random() * total);
+                return { kind: STATUS_TYPES.IN_PROGRESS, processed, total };
+            }
+            return { kind: STATUS_TYPES.NOT_INITIATED };
+        }
+
+        function generateMockProjects(count = 56) {
+            const projects = [];
+            for (let i = 0; i < count; i++) {
+                const status = generateStatus();
+                const hasBeenInitiated = status.kind !== STATUS_TYPES.NOT_INITIATED;
+                const user = hasBeenInitiated ? users[Math.floor(Math.random() * users.length)] : null;
+                
+                // Count actual included documents from mock data and get their IDs
+                const mockDocs = generateMockDocuments();
+                let includedCount = 0;
+                const includedDocIds = [];
+                mockDocs.forEach(folder => {
+                    folder.children?.forEach(doc => {
+                        if (doc.included) {
+                            includedCount++;
+                            includedDocIds.push(doc.docId);
+                        }
+                    });
+                });
+                
+                projects.push({
+                    projectId: `proj-${i + 1}`,
+                    projectName: i < projectNames.length ? projectNames[i] : `Case ${i + 1} v. Corporation`,
+                    documentCount: includedCount,
+                    status,
+                    initiatedBy: user,
+                    initiatedAt: hasBeenInitiated ? new Date(Date.now() - Math.random() * 180 * 24 * 60 * 60 * 1000).toISOString() : null,
+                    lastCompletedDocs: status.kind === STATUS_TYPES.COMPLETE ? new Set(includedDocIds) : new Set(),
+                });
+            }
+            return projects;
+        }
+
+        function generateMockDocuments() {
+            const docs = [];
+            
+            Object.entries(documentTypes).forEach(([folder, files], folderIdx) => {
+                const folderNode = {
+                    docId: `folder-${folderIdx}`,
+                    fileName: folder,
+                    isFolder: true,
+                    children: files.map((file, idx) => ({
+                        docId: `doc-${folderIdx}-${idx}`,
+                        fileName: `Smith_v_MercyHospital_${file}.pdf`,
+                        isFile: true,
+                        included: (folder === 'Medical Records' || folder === 'Discovery' || (folder === 'Depositions' && idx === 0)),
+                        originallyIncluded: (folder === 'Medical Records' || folder === 'Discovery' || (folder === 'Depositions' && idx === 0)),
+                    }))
+                };
+                docs.push(folderNode);
+            });
+            
+            return docs;
+        }
+
+        function getStatusColor(status) {
+            switch (status.kind) {
+                case STATUS_TYPES.COMPLETE: 
+                    return 'bg-green-100 text-green-700 border-green-300';
+                case STATUS_TYPES.IN_PROGRESS: 
+                    return 'bg-blue-100 text-blue-700 border-blue-300';
+                case STATUS_TYPES.NOT_INITIATED: 
+                    return 'bg-gray-100 text-gray-500 border-gray-300';
+                default: 
+                    return 'bg-gray-100 text-gray-500 border-gray-300';
+            }
+        }
+
+        function getStatusLabel(status) {
+            switch (status.kind) {
+                case STATUS_TYPES.COMPLETE: 
+                    return 'Complete';
+                case STATUS_TYPES.IN_PROGRESS: 
+                    return `In progress (${status.processed}/${status.total})`;
+                case STATUS_TYPES.NOT_INITIATED: 
+                    return 'Not initiated';
+                default: 
+                    return 'Unknown';
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '--';
+            return new Date(dateString).toLocaleDateString('en-US', { 
+                month: '2-digit', 
+                day: '2-digit', 
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            }).replace(',', '');
+        }
+
+        // Context
+        const AppContext = createContext();
+
+        function AppProvider({ children }) {
+            const [projects, setProjects] = useState(() => generateMockProjects());
+            const [selectedProjects, setSelectedProjects] = useState(new Set());
+            const [currentView, setCurrentView] = useState('dashboard');
+            const [currentProjectId, setCurrentProjectId] = useState(null);
+
+            const updateProjectStatus = useCallback((projectId, status, includedDocs = null) => {
+                setProjects(prev => prev.map(p => {
+                    if (p.projectId === projectId) {
+                        const updates = { ...p, status };
+                        if (status.kind === STATUS_TYPES.COMPLETE && includedDocs) {
+                            updates.lastCompletedDocs = new Set(includedDocs);
+                        }
+                        return updates;
+                    }
+                    return p;
+                }));
+            }, []);
+
+            const initiateOrUpdateProject = useCallback((projectId, includedDocs, isUpdate = false, changeStats = null) => {
+                const now = new Date().toISOString();
+                const user = { id: 'current', name: 'Current User' };
+                // For updates, only process changed documents
+                const total = isUpdate && changeStats ? 
+                    (changeStats.added + changeStats.removed) : 
+                    includedDocs.length;
+                
+                // Set to in progress
+                updateProjectStatus(projectId, { 
+                    kind: STATUS_TYPES.IN_PROGRESS, 
+                    processed: 0, 
+                    total 
+                });
+
+                if (!isUpdate) {
+                    setProjects(prev => prev.map(p =>
+                        p.projectId === projectId 
+                            ? { ...p, initiatedAt: now, initiatedBy: user }
+                            : p
+                    ));
+                }
+
+                // Simulate processing with more realistic timing
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress++;
+                    if (progress >= total) {
+                        updateProjectStatus(projectId, { kind: STATUS_TYPES.COMPLETE }, includedDocs);
+                        clearInterval(interval);
+                    } else {
+                        updateProjectStatus(projectId, { 
+                            kind: STATUS_TYPES.IN_PROGRESS, 
+                            processed: progress, 
+                            total 
+                        });
+                    }
+                }, 800 + Math.random() * 400); // 800-1200ms per document for realistic feel
+            }, [updateProjectStatus]);
+
+            return (
+                <AppContext.Provider value={{
+                    projects, selectedProjects, setSelectedProjects,
+                    currentView, setCurrentView, currentProjectId, setCurrentProjectId,
+                    initiateOrUpdateProject, updateProjectStatus
+                }}>
+                    {children}
+                </AppContext.Provider>
+            );
+        }
+
+        // Components
+        function Header() {
+            const [showMenu, setShowMenu] = useState(false);
+            const [showAdvanced, setShowAdvanced] = useState(false);
+            const { setCurrentView } = useContext(AppContext);
+
+            return (
+                <>
+                    <header className="bg-gray-900 text-white h-14 relative">
+                        <div className="flex items-center justify-between h-full px-6">
+                            <div className="flex items-center space-x-6">
+                                <button onClick={() => setShowMenu(!showMenu)} className="hover:bg-gray-800 p-1 rounded">
+                                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
+                                </button>
+                                <nav className="flex items-center space-x-6 text-sm">
+                                    <span>Feed</span>
+                                    <span>Tasks</span>
+                                    <span>Projects</span>
+                                    <span>Documents</span>
+                                </nav>
+                            </div>
+                            
+                            {/* Filevine Logo - Centered */}
+                            <div className="absolute left-1/2 transform -translate-x-1/2">
+                                <span className="text-2xl font-bold tracking-wide">Filevine</span>
+                            </div>
+                            
+                            <div className="flex items-center space-x-4">
+                                <input
+                                    type="text"
+                                    placeholder="Search for a project"
+                                    className="bg-gray-800 text-white placeholder-gray-400 px-4 py-2 rounded text-sm w-64"
+                                />
+                                <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center text-sm font-medium">JK</div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Slide-out Menu */}
+                    {showMenu && (
+                        <>
+                            <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setShowMenu(false)}></div>
+                            <div className="fixed left-0 top-0 h-full w-64 bg-black text-white z-50 slide-in">
+                                <div className="p-4">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <span className="text-xl font-bold">Filevine</span>
+                                        <button onClick={() => setShowMenu(false)} className="text-white hover:text-gray-300">
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <nav className="space-y-2">
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+                                            </svg>
+                                            <span>Mailroom</span>
+                                        </button>
+                                        
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                                            </svg>
+                                            <span>Contacts</span>
+                                        </button>
+                                        
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z"/>
+                                            </svg>
+                                            <span>Timesheet</span>
+                                        </button>
+                                        
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"/>
+                                            </svg>
+                                            <span>Calendar</span>
+                                        </button>
+                                        
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"/>
+                                            </svg>
+                                            <span>Search</span>
+                                        </button>
+                                        
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <span className="text-xl">+</span>
+                                            <span>New Project</span>
+                                        </button>
+                                        
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zM3 11a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM2 15a1 1 0 011-1h14a1 1 0 110 2H3a1 1 0 01-1-1z"/>
+                                            </svg>
+                                            <span>Saved Reports</span>
+                                        </button>
+                                        
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 2v8h10V6H5z"/>
+                                            </svg>
+                                            <span>Report Builder</span>
+                                        </button>
+                                        
+                                        <button className="w-full flex items-center space-x-3 p-3 hover:bg-gray-900 rounded">
+                                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"/>
+                                            </svg>
+                                            <span>Setup</span>
+                                        </button>
+                                        
+                                        <button 
+                                            onClick={() => setShowAdvanced(!showAdvanced)}
+                                            className="w-full flex items-center justify-between p-3 hover:bg-gray-900 rounded"
+                                        >
+                                            <div className="flex items-center space-x-3">
+                                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z"/>
+                                                </svg>
+                                                <span>Advanced</span>
+                                            </div>
+                                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20" className={`transform transition-transform ${showAdvanced ? 'rotate-90' : ''}`}>
+                                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"/>
+                                            </svg>
+                                        </button>
+                                        
+                                        {showAdvanced && (
+                                            <div className="ml-8 space-y-2">
+                                                <button className="w-full flex items-center space-x-3 p-2 hover:bg-gray-900 rounded text-sm">
+                                                    <span>Client Portal Manager</span>
+                                                </button>
+                                                <button 
+                                                    onClick={() => {
+                                                        setCurrentView('dashboard');
+                                                        setShowMenu(false);
+                                                    }}
+                                                    className="w-full flex items-center space-x-3 p-2 hover:bg-gray-900 rounded text-sm"
+                                                >
+                                                    <span>MedChron Dashboard</span>
+                                                </button>
+                                            </div>
+                                        )}
+                                    </nav>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </>
+            );
+        }
+
+        function StatusBadge({ status }) {
+            return (
+                <span className={`status-badge inline-flex items-center rounded border ${getStatusColor(status)}`}>
+                    {getStatusLabel(status)}
+                </span>
+            );
+        }
+
+        function Dashboard() {
+            const { projects, setCurrentView, setCurrentProjectId, initiateOrUpdateProject } = useContext(AppContext);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [statusFilter, setStatusFilter] = useState(new Set());
+            const [currentPage, setCurrentPage] = useState(1);
+            const [selectedProjects, setSelectedProjects] = useState(new Set());
+            const [showConfirmModal, setShowConfirmModal] = useState(false);
+            const [sortBy, setSortBy] = useState('initiatedAt');
+            const [sortDirection, setSortDirection] = useState('desc');
+            const pageSize = 10;
+
+            const stats = useMemo(() => ({
+                complete: projects.filter(p => p.status.kind === STATUS_TYPES.COMPLETE).length,
+                inProgress: projects.filter(p => p.status.kind === STATUS_TYPES.IN_PROGRESS).length,
+                notInitiated: projects.filter(p => p.status.kind === STATUS_TYPES.NOT_INITIATED).length,
+            }), [projects]);
+
+            const handleSort = (field) => {
+                if (sortBy === field) {
+                    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                } else {
+                    setSortBy(field);
+                    setSortDirection('desc');
+                }
+            };
+
+            const filteredProjects = useMemo(() => {
+                const filtered = projects.filter(project => {
+                    const matchesSearch = project.projectName.toLowerCase().includes(searchTerm.toLowerCase());
+                    const matchesStatus = statusFilter.size === 0 || statusFilter.has(project.status.kind);
+                    return matchesSearch && matchesStatus;
+                });
+                
+                // Sort projects
+                return filtered.sort((a, b) => {
+                    let comparison = 0;
+                    if (sortBy === 'projectName') {
+                        comparison = a.projectName.localeCompare(b.projectName);
+                    } else if (sortBy === 'initiatedAt') {
+                        const dateA = a.initiatedAt ? new Date(a.initiatedAt).getTime() : 0;
+                        const dateB = b.initiatedAt ? new Date(b.initiatedAt).getTime() : 0;
+                        comparison = dateA - dateB;
+                    }
+                    return sortDirection === 'asc' ? comparison : -comparison;
+                });
+            }, [projects, searchTerm, statusFilter, sortBy, sortDirection]);
+
+            const paginatedProjects = useMemo(() => {
+                const startIndex = (currentPage - 1) * pageSize;
+                return filteredProjects.slice(startIndex, startIndex + pageSize);
+            }, [filteredProjects, currentPage]);
+
+            const totalPages = Math.ceil(filteredProjects.length / pageSize);
+
+            const handleSelectAll = () => {
+                if (selectedProjects.size === paginatedProjects.length) {
+                    setSelectedProjects(new Set());
+                } else {
+                    setSelectedProjects(new Set(paginatedProjects.map(p => p.projectId)));
+                }
+            };
+
+            const handleBulkInitiate = () => {
+                const toInitiate = Array.from(selectedProjects).filter(id => {
+                    const project = projects.find(p => p.projectId === id);
+                    return project && project.status.kind === STATUS_TYPES.NOT_INITIATED;
+                });
+                
+                toInitiate.forEach(projectId => {
+                    // Use default doc selection for bulk initiation
+                    initiateOrUpdateProject(projectId, ['doc-0-0', 'doc-0-1', 'doc-1-0', 'doc-4-0', 'doc-4-1'], false);
+                });
+                
+                setSelectedProjects(new Set());
+                setShowConfirmModal(false);
+            };
+
+            const selectedNotInitiated = useMemo(() => {
+                return Array.from(selectedProjects).filter(id => {
+                    const project = projects.find(p => p.projectId === id);
+                    return project && project.status.kind === STATUS_TYPES.NOT_INITIATED;
+                });
+            }, [selectedProjects, projects]);
+
+            return (
+                <div className="min-h-screen bg-gray-50">
+                    <div className="bg-white border-b px-6 py-3">
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold text-gray-900">Advanced</span>
+                            <select className="border border-gray-300 rounded px-3 py-1 text-sm">
+                                <option>Org</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="flex">
+                        <aside className="w-56 bg-white border-r min-h-screen">
+                            <div className="p-4">
+                                <nav>
+                                    <div className="flex items-center space-x-2 px-3 py-2 bg-cyan-50 text-cyan-600 rounded">
+                                        <div className="w-1.5 h-1.5 bg-cyan-600 rounded-full"></div>
+                                        <span className="font-medium text-sm">MedChron Dashboard</span>
+                                    </div>
+                                </nav>
+                            </div>
+                        </aside>
+
+                        <main className="flex-1 p-6">
+                            <h1 className="text-2xl font-bold text-gray-900 mb-6">MedChron Dashboard</h1>
+                            
+                            <div className="grid grid-cols-3 gap-4 mb-6">
+                                <div className="bg-white rounded-lg border p-4">
+                                    <div className="text-3xl font-bold text-green-700">{stats.complete}</div>
+                                    <div className="text-sm text-gray-600 mt-1">Complete</div>
+                                </div>
+                                <div className="bg-white rounded-lg border p-4">
+                                    <div className="text-3xl font-bold text-blue-700">{stats.inProgress}</div>
+                                    <div className="text-sm text-gray-600 mt-1">In Progress</div>
+                                </div>
+                                <div className="bg-white rounded-lg border p-4">
+                                    <div className="text-3xl font-bold text-gray-500">{stats.notInitiated}</div>
+                                    <div className="text-sm text-gray-600 mt-1">Not Initiated</div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-lg border">
+                                <div className="p-4 border-b">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center space-x-4 flex-1">
+                                            <input
+                                                type="text"
+                                                placeholder="Search by project name"
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                                className="max-w-sm px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                            />
+                                            <div className="flex items-center space-x-2">
+                                                <span className="text-sm text-gray-600">Filter by status:</span>
+                                                {Object.values(STATUS_TYPES).map(status => (
+                                                    <button
+                                                        key={status}
+                                                        onClick={() => {
+                                                            const newSet = new Set(statusFilter);
+                                                            if (newSet.has(status)) newSet.delete(status);
+                                                            else newSet.add(status);
+                                                            setStatusFilter(newSet);
+                                                        }}
+                                                        className={`px-3 py-1 text-xs rounded-full border transition-all ${
+                                                            statusFilter.has(status) 
+                                                                ? 'bg-cyan-100 text-cyan-700 border-cyan-300' 
+                                                                : 'bg-white text-gray-600 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        {status.replace('_', ' ')}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {selectedNotInitiated.length > 0 && (
+                                            <button
+                                                onClick={() => setShowConfirmModal(true)}
+                                                className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 text-sm font-medium transition-all"
+                                            >
+                                                Initialize ({selectedNotInitiated.length})
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="bg-gray-50 border-b">
+                                            <th className="w-12 px-4 py-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedProjects.size === paginatedProjects.length && paginatedProjects.length > 0}
+                                                    onChange={handleSelectAll}
+                                                />
+                                            </th>
+                                            <th className="px-4 py-3 text-left">
+                                                <button 
+                                                    onClick={() => handleSort('projectName')}
+                                                    className="flex items-center space-x-1 text-xs font-medium text-gray-600 uppercase hover:text-gray-900"
+                                                >
+                                                    <span>Project name</span>
+                                                    {sortBy === 'projectName' && (
+                                                        <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">MedChron status</th>
+                                            <th className="px-4 py-3 text-left">
+                                                <button 
+                                                    onClick={() => handleSort('initiatedAt')}
+                                                    className="flex items-center space-x-1 text-xs font-medium text-gray-600 uppercase hover:text-gray-900"
+                                                >
+                                                    <span>Initiation date</span>
+                                                    {sortBy === 'initiatedAt' && (
+                                                        <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Initiated by</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {paginatedProjects.map((project) => (
+                                            <tr key={project.projectId} className="hover:bg-gray-50 transition-colors">
+                                                <td className="px-4 py-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedProjects.has(project.projectId)}
+                                                        onChange={() => {
+                                                            const newSet = new Set(selectedProjects);
+                                                            if (newSet.has(project.projectId)) {
+                                                                newSet.delete(project.projectId);
+                                                            } else {
+                                                                newSet.add(project.projectId);
+                                                            }
+                                                            setSelectedProjects(newSet);
+                                                        }}
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        onClick={() => {
+                                                            setCurrentProjectId(project.projectId);
+                                                            setCurrentView('verification');
+                                                        }}
+                                                        className="text-blue-600 hover:underline text-sm"
+                                                    >
+                                                        {project.projectName}
+                                                    </button>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <StatusBadge status={project.status} />
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">{formatDate(project.initiatedAt)}</td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">{project.initiatedBy?.name || '--'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+
+                                <div className="px-4 py-3 border-t flex items-center justify-between">
+                                    <div className="text-sm text-gray-700">
+                                        {filteredProjects.length} total projects
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="px-2 py-1 disabled:opacity-50">«</button>
+                                        <span className="px-2 text-sm">Page {currentPage} of {totalPages || 1}</span>
+                                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className="px-2 py-1 disabled:opacity-50">»</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+
+                    {showConfirmModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 max-w-md shadow-xl slide-in">
+                                <h3 className="text-lg font-semibold mb-4">Initialize MedChron</h3>
+                                <p className="text-gray-600 mb-2">
+                                    You are about to initialize MedChron for {selectedNotInitiated.length} project{selectedNotInitiated.length > 1 ? 's' : ''}.
+                                </p>
+                                <p className="text-sm text-gray-500 mb-6">
+                                    Each project will use the default document selection for processing. You can customize document selection by visiting each project individually.
+                                </p>
+                                <div className="flex space-x-3 justify-end">
+                                    <button 
+                                        onClick={() => setShowConfirmModal(false)} 
+                                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        onClick={handleBulkInitiate} 
+                                        className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600"
+                                    >
+                                        Initialize {selectedNotInitiated.length} Project{selectedNotInitiated.length > 1 ? 's' : ''}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function ProjectVerification() {
+            const { projects, currentProjectId, setCurrentView, initiateOrUpdateProject } = useContext(AppContext);
+            
+            const project = projects.find(p => p.projectId === currentProjectId) || {
+                projectId: 'proj-1',
+                projectName: 'Dixon v. Elm Street Pharmacy',
+                documentCount: 8,
+                status: { kind: STATUS_TYPES.NOT_INITIATED }
+            };
+            
+            const [documents, setDocuments] = useState(() => {
+                const docs = generateMockDocuments();
+                // If project is complete, use the original included state as baseline
+                // The lastCompletedDocs will be synced to match the initial state
+                return docs;
+            });
+            const [expandedFolders, setExpandedFolders] = useState(new Set(['folder-0', 'folder-1', 'folder-4']));
+            const [changesMade, setChangesMade] = useState(false);
+            const [hoveredTooltip, setHoveredTooltip] = useState(false);
+            const [hasUserModified, setHasUserModified] = useState(false);
+            
+            const isLocked = project.status.kind === STATUS_TYPES.IN_PROGRESS;
+            const isComplete = project.status.kind === STATUS_TYPES.COMPLETE;
+            const isNotInitiated = project.status.kind === STATUS_TYPES.NOT_INITIATED;
+            
+            const includedDocs = useMemo(() => {
+                const docs = [];
+                documents.forEach(folder => {
+                    folder.children?.forEach(doc => {
+                        if (doc.included) docs.push(doc.docId);
+                    });
+                });
+                return docs;
+            }, [documents]);
+
+            const changeStats = useMemo(() => {
+                if (!isComplete || !project.lastCompletedDocs || !hasUserModified) return { added: 0, removed: 0 };
+                
+                const currentSet = new Set(includedDocs);
+                const previousSet = project.lastCompletedDocs;
+                
+                let added = 0;
+                let removed = 0;
+                
+                currentSet.forEach(doc => {
+                    if (!previousSet.has(doc)) added++;
+                });
+                
+                previousSet.forEach(doc => {
+                    if (!currentSet.has(doc)) removed++;
+                });
+                
+                return { added, removed };
+            }, [includedDocs, project.lastCompletedDocs, isComplete, hasUserModified]);
+
+            useEffect(() => {
+                if (isComplete) {
+                    const hasChanges = changeStats.added > 0 || changeStats.removed > 0;
+                    setChangesMade(hasChanges);
+                }
+            }, [changeStats, isComplete]);
+
+            const toggleDocument = (folderId, docId) => {
+                if (isLocked) return;
+                
+                setHasUserModified(true);
+                setDocuments(prev => prev.map(folder => {
+                    if (folder.docId === folderId) {
+                        return {
+                            ...folder,
+                            children: folder.children.map(doc => 
+                                doc.docId === docId ? { ...doc, included: !doc.included } : doc
+                            )
+                        };
+                    }
+                    return folder;
+                }));
+            };
+
+            const toggleFolder = (folderId) => {
+                if (isLocked) return;
+                
+                setHasUserModified(true);
+                setDocuments(prev => prev.map(folder => {
+                    if (folder.docId === folderId) {
+                        // Check if all children are currently included
+                        const allIncluded = folder.children?.every(doc => doc.included);
+                        const newIncludedState = !allIncluded;
+                        
+                        return {
+                            ...folder,
+                            children: folder.children?.map(doc => ({ ...doc, included: newIncludedState }))
+                        };
+                    }
+                    return folder;
+                }));
+            };
+
+            const getFolderCheckState = (folder) => {
+                if (!folder.children) return 'unchecked';
+                const includedCount = folder.children.filter(doc => doc.included).length;
+                if (includedCount === 0) return 'unchecked';
+                if (includedCount === folder.children.length) return 'checked';
+                return 'indeterminate';
+            };
+
+            const handleAction = () => {
+                if (isNotInitiated) {
+                    initiateOrUpdateProject(currentProjectId, includedDocs, false);
+                } else if (isComplete && changesMade) {
+                    // Pass the change stats for update processing
+                    initiateOrUpdateProject(currentProjectId, includedDocs, true, changeStats);
+                    setHasUserModified(false);
+                }
+            };
+
+            const getDocumentStatus = (doc) => {
+                if (!isComplete || !project.lastCompletedDocs || !hasUserModified) {
+                    return doc.included ? 'included' : 'excluded';
+                }
+                
+                const wasIncluded = project.lastCompletedDocs.has(doc.docId);
+                const isIncluded = doc.included;
+                
+                if (!wasIncluded && isIncluded) return 'added';
+                if (wasIncluded && !isIncluded) return 'removed';
+                return isIncluded ? 'included' : 'excluded';
+            };
+
+            return (
+                <div className="min-h-screen bg-white">
+
+                    <div className="flex">
+                        <aside className="w-48 bg-white border-r min-h-screen">
+                            <div className="p-3">
+                                <nav>
+                                    <div className="flex items-center space-x-2 px-2 py-1.5 bg-cyan-50 text-cyan-600 rounded">
+                                        <div className="w-1.5 h-1.5 bg-cyan-600 rounded-full"></div>
+                                        <span className="text-sm">MedChron</span>
+                                    </div>
+                                </nav>
+                            </div>
+                        </aside>
+
+                        <main className="flex-1">
+                            <div className="px-6 py-4 border-b">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h1 className="text-xl font-semibold">{project.projectName}</h1>
+                                        <div className="flex items-center space-x-2 mt-1">
+                                            {!isNotInitiated && (
+                                                <>
+                                                    <span className="text-sm text-gray-600">MedChron Status:</span>
+                                                    <StatusBadge status={project.status} />
+                                                </>
+                                            )}
+                                            {isNotInitiated && (
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="text-sm text-gray-500">MedChron Status:</span>
+                                                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">Not Initiated</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {project.status.kind === STATUS_TYPES.IN_PROGRESS && (
+                                    <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 slide-in">
+                                        <div className="flex justify-between mb-2">
+                                            <span className="text-sm font-medium text-blue-900">Processing Documents</span>
+                                            <span className="text-sm text-blue-700">
+                                                {project.status.processed} of {project.status.total} documents
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-blue-100 rounded-full h-2">
+                                            <div 
+                                                className="bg-blue-500 h-2 rounded-full progress-bar"
+                                                style={{ width: `${(project.status.processed / project.status.total) * 100}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="px-6 py-8 text-center">
+                                <div className="w-20 h-20 bg-cyan-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <svg width="40" height="40" fill="#06b6d4" viewBox="0 0 24 24">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+                                    </svg>
+                                </div>
+                                <h2 className="text-2xl font-semibold mb-3">Welcome to MedChron by Filevine</h2>
+                                <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
+                                    MedChron uses AI to generate a comprehensive medical chronology based on all relevant documents uploaded to this project, helping you quickly understand a patient's treatments, diagnoses, and overall medical history.
+                                </p>
+                                {isNotInitiated && (
+                                    <button 
+                                        onClick={handleAction}
+                                        className="px-6 py-2.5 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 font-medium"
+                                    >
+                                        Initiate MedChron
+                                    </button>
+                                )}
+                                {!isNotInitiated && !isLocked && hasUserModified && changesMade && (
+                                    <div className="flex flex-col items-center space-y-3">
+                                        <button 
+                                            onClick={handleAction}
+                                            className="px-6 py-2.5 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 font-medium"
+                                        >
+                                            Update MedChron
+                                        </button>
+                                        <div className="flex items-center space-x-2">
+                                            {changeStats.added > 0 && (
+                                                <div className="change-indicator added">
+                                                    +{changeStats.added} added
+                                                </div>
+                                            )}
+                                            {changeStats.removed > 0 && (
+                                                <div className="change-indicator removed">
+                                                    -{changeStats.removed} removed
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="px-6 py-4">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h3 className="font-semibold">Source documents</h3>
+                                        <p className="text-sm text-gray-600">
+                                            {isNotInitiated ? 
+                                                `${includedDocs.length} documents from this project will be included as sources to initiate MedChron` :
+                                                <>
+                                                    {includedDocs.length} documents will be included
+                                                    {isLocked && <span className="text-orange-600 ml-2">• Processing in progress - changes locked</span>}
+                                                </>
+                                            }
+                                        </p>
+                                    </div>
+                                    <button 
+                                        disabled={isLocked}
+                                        className={`text-sm font-medium ${
+                                            isLocked ? 'text-gray-400 cursor-not-allowed' : 'text-cyan-600 hover:text-cyan-700'
+                                        }`}
+                                    >
+                                        + Add documents
+                                    </button>
+                                </div>
+
+                                <div className={`border rounded ${isLocked ? 'opacity-75' : ''}`}>
+                                    <table className="w-full">
+                                        <thead>
+                                            <tr className="bg-gray-50 border-b">
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Name</th>
+                                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-600 uppercase">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {documents.map((folder) => (
+                                                <React.Fragment key={folder.docId}>
+                                                    <tr className="tree-row border-b">
+                                                        <td className="px-4 py-2">
+                                                            <div className="flex items-center">
+                                                                <div 
+                                                                    className={isLocked ? 'tooltip' : ''}
+                                                                    data-tooltip={isLocked ? "Changes locked during processing" : ""}
+                                                                >
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        ref={el => {
+                                                                            if (el) {
+                                                                                const state = getFolderCheckState(folder);
+                                                                                el.checked = state === 'checked';
+                                                                                el.indeterminate = state === 'indeterminate';
+                                                                            }
+                                                                        }}
+                                                                        onChange={() => toggleFolder(folder.docId)}
+                                                                        disabled={isLocked}
+                                                                        className={`mr-2 ${isLocked ? 'locked-checkbox' : ''}`}
+                                                                    />
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const newSet = new Set(expandedFolders);
+                                                                        if (newSet.has(folder.docId)) newSet.delete(folder.docId);
+                                                                        else newSet.add(folder.docId);
+                                                                        setExpandedFolders(newSet);
+                                                                    }}
+                                                                    className="mr-2 text-gray-500"
+                                                                >
+                                                                    {expandedFolders.has(folder.docId) ? '▼' : '▶'}
+                                                                </button>
+                                                                <svg width="16" height="16" fill="#f59e0b" viewBox="0 0 20 20" className="mr-2">
+                                                                    <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
+                                                                </svg>
+                                                                <span className="text-sm font-medium">{folder.fileName}</span>
+                                                                <span className="ml-2 text-xs text-gray-500">
+                                                                    ({folder.children?.filter(d => d.included).length}/{folder.children?.length} selected)
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right">
+                                                            {getFolderCheckState(folder) === 'checked' && (
+                                                                <span className="text-green-600 text-sm">✓ All included</span>
+                                                            )}
+                                                            {getFolderCheckState(folder) === 'indeterminate' && (
+                                                                <span className="text-blue-600 text-sm">Partial</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                    {expandedFolders.has(folder.docId) && folder.children?.map((doc) => {
+                                                        const docStatus = getDocumentStatus(doc);
+                                                        return (
+                                                            <tr key={doc.docId} className={`tree-row ${isLocked ? 'locked-row' : ''}`}>
+                                                                <td className="px-4 py-2 pl-16">
+                                                                    <div className="flex items-center">
+                                                                        <div 
+                                                                            className={isLocked ? 'tooltip' : ''}
+                                                                            data-tooltip={isLocked ? "Changes locked during processing" : ""}
+                                                                        >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={doc.included}
+                                                                                onChange={() => toggleDocument(folder.docId, doc.docId)}
+                                                                                disabled={isLocked}
+                                                                                className={`mr-2 ${isLocked ? 'locked-checkbox' : ''}`}
+                                                                            />
+                                                                        </div>
+                                                                        <svg width="16" height="16" fill="#ef4444" viewBox="0 0 20 20" className="mr-2">
+                                                                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/>
+                                                                        </svg>
+                                                                        <span className={`text-sm ${docStatus === 'removed' ? 'line-through text-gray-400' : ''}`}>
+                                                                            {doc.fileName}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-4 py-2 text-right">
+                                                                    {docStatus === 'added' && (
+                                                                        <span className="change-indicator added">New</span>
+                                                                    )}
+                                                                    {docStatus === 'removed' && (
+                                                                        <span className="change-indicator removed">Removed</span>
+                                                                    )}
+                                                                    {docStatus === 'included' && (
+                                                                        <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">✓ Included</span>
+                                                                    )}
+                                                                    {docStatus === 'excluded' && (
+                                                                        <span className="px-2 py-1 bg-gray-100 text-gray-500 rounded text-xs font-medium">Excluded</span>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </React.Fragment>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            );
+        }
+
+        function App() {
+            const { currentView } = useContext(AppContext);
+            
+            return (
+                <div>
+                    <Header />
+                    {currentView === 'dashboard' ? <Dashboard /> : <ProjectVerification />}
+                </div>
+            );
+        }
+
+        function Root() {
+            return (
+                <AppProvider>
+                    <App />
+                </AppProvider>
+            );
+        }
+
+        ReactDOM.render(<Root />, document.getElementById('root'));
+    </script>
+</body>
+</html>

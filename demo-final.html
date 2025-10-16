@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedChron Dashboard - Final</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif; }
+        .tree-row:hover { background-color: #f7f8fa; }
+        .status-badge { font-size: 11px; padding: 2px 8px; }
+    </style>
+</head>
+<body class="bg-white">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback, createContext, useContext } = React;
+
+        // Mock Data
+        const users = [
+            { id: '1', name: 'Olivia Carter' },
+            { id: '2', name: 'Marcus Bennett' },
+            { id: '3', name: 'Harper Reed' },
+            { id: '4', name: 'System Admin' },
+        ];
+
+        const projectNames = [
+            'Baker v. Ridgeview Apartments', 'Ramos v. Northgate Superstore',
+            'Parker v. Sunrise Daycare Center', 'Flores v. Capital Mall Management',
+            'Thompson v. Lakeside School District', 'Mitchell v. Clearview Golf Club',
+            'Rivera v. Cascade Transit Authority', 'Grant v. Horizon Delivery Services',
+            'Brooks v. Valley Hospital Corporation', 'Dixon v. Elm Street Pharmacy',
+        ];
+
+        const documentTypes = {
+            Discovery: ['PlaintiffSmithTranscript', 'DoctorJonesTranscript', 'Document_1', 'Document_2', 'MedicalRecord_2', 'MedicalRecord_3', 'MedicalRecord_4'],
+            Depositions: ['PlaintiffSmithTranscript', 'DefendantObjections', 'VerifiedAnswers'],
+            Disclosures: ['TreatingPhysicians', 'Document_1'],
+            'Expert Discovery': ['ReportDrRivera', 'Document_2'],
+            Interrogatories: ['PlaintiffSet1', 'DefendantObjections', 'VerifiedAnswers'],
+            'Medical Records': ['AdmissionRecords', 'OrthopedicProgressNotes', 'NeurologyOfficeVisit', 'RadiologyImagingXRayLeftKnee', 'TreatmentSummary', 'PharmacyRXHistory'],
+            Correspondence: ['LetterToDefense', 'DemandLetter', 'RecordsRequest'],
+            Research: ['EconomicLossAnalysis', 'MedicalLiteratureSurgery', 'PriorCasesHospitalNegligence'],
+            Evidence: ['ForensicReport', 'PhotoExhibits', 'VideoExhibits'],
+            'Work Product': ['WitnessPrep', 'InternalNotes', 'TrialPrepChecklist'],
+            Billing: ['TimeEntries', 'BillingSummary', 'ExpenseReport'],
+        };
+
+        function generateStatus() {
+            const rand = Math.random();
+            if (rand < 0.5) return { kind: 'completed' };
+            if (rand < 0.65) {
+                const total = Math.floor(Math.random() * 50) + 10;
+                const processed = Math.floor(Math.random() * total);
+                return { kind: 'in_progress', processed, total };
+            }
+            if (rand < 0.75) return { kind: 'pending' };
+            if (rand < 0.85) return { kind: 'review', pendingCount: Math.floor(Math.random() * 15) + 1 };
+            return { kind: 'not_initiated' };
+        }
+
+        function generateMockProjects(count = 274) {
+            const projects = [];
+            for (let i = 0; i < count; i++) {
+                const status = generateStatus();
+                const hasBeenInitiated = status.kind !== 'not_initiated';
+                const user = hasBeenInitiated ? users[Math.floor(Math.random() * users.length)] : null;
+                
+                projects.push({
+                    projectId: `proj-${i + 1}`,
+                    projectName: projectNames[i % projectNames.length] + (i >= projectNames.length ? ` (${Math.floor(i / projectNames.length) + 1})` : ''),
+                    status,
+                    initiatedBy: user,
+                    initiatedAt: hasBeenInitiated ? new Date(Date.now() - Math.random() * 180 * 24 * 60 * 60 * 1000).toISOString() : null,
+                });
+            }
+            return projects;
+        }
+
+        function generateMockDocuments() {
+            const docs = [];
+            
+            Object.entries(documentTypes).forEach(([folder, files]) => {
+                const folderNode = {
+                    docId: `folder-${folder}`,
+                    fileName: folder,
+                    isFolder: true,
+                    included: folder === 'Medical Records' || folder === 'Discovery' || folder === 'Depositions',
+                    children: files.map((file, idx) => ({
+                        docId: `doc-${folder}-${idx}`,
+                        fileName: `Smith_v_MercyHospital_${file}.${file.includes('Image') || file.includes('Photo') ? 'docx' : 'pdf'}`,
+                        isFile: true,
+                        included: folder === 'Medical Records' || (folder === 'Discovery' && idx < 3) || (folder === 'Depositions' && idx === 0),
+                    }))
+                };
+                docs.push(folderNode);
+            });
+            
+            return docs;
+        }
+
+        function getStatusColor(status) {
+            switch (status.kind) {
+                case 'completed': return 'bg-green-100 text-green-700 border-green-300';
+                case 'in_progress': return 'bg-blue-100 text-blue-700 border-blue-300';
+                case 'pending': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+                case 'review': return 'bg-purple-100 text-purple-700 border-purple-300';
+                case 'not_initiated': return 'bg-gray-100 text-gray-500 border-gray-300';
+                default: return 'bg-gray-100 text-gray-500 border-gray-300';
+            }
+        }
+
+        function getStatusLabel(status) {
+            switch (status.kind) {
+                case 'completed': return 'Completed';
+                case 'in_progress': return `In progress - ${status.processed}%`;
+                case 'pending': return 'Pending';
+                case 'review': return `Review (${status.pendingCount})`;
+                case 'not_initiated': return 'Not initiated';
+                default: return 'Unknown';
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '--';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', { 
+                month: '2-digit', 
+                day: '2-digit', 
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            }).replace(',', '');
+        }
+
+        // Context
+        const AppContext = createContext();
+
+        function AppProvider({ children }) {
+            const [projects, setProjects] = useState(() => generateMockProjects());
+            const [selectedProjects, setSelectedProjects] = useState(new Set());
+            const [currentView, setCurrentView] = useState('dashboard');
+            const [currentProjectId, setCurrentProjectId] = useState(null);
+
+            const updateProjectStatus = useCallback((projectId, status) => {
+                setProjects(prev => prev.map(p =>
+                    p.projectId === projectId ? { ...p, status } : p
+                ));
+            }, []);
+
+            const initiateProjects = useCallback((projectIds) => {
+                const now = new Date().toISOString();
+                setProjects(prev => prev.map(project => {
+                    if (projectIds.includes(project.projectId)) {
+                        return { ...project, status: { kind: 'pending' }, initiatedAt: now, initiatedBy: { id: 'current', name: 'Current User' } };
+                    }
+                    return project;
+                }));
+
+                projectIds.forEach((projectId, index) => {
+                    setTimeout(() => {
+                        const total = Math.floor(Math.random() * 30) + 20;
+                        updateProjectStatus(projectId, { kind: 'in_progress', processed: 0, total });
+                        
+                        let progress = 0;
+                        const interval = setInterval(() => {
+                            progress += Math.floor(Math.random() * 5) + 1;
+                            if (progress >= total) {
+                                updateProjectStatus(projectId, { kind: 'completed' });
+                                clearInterval(interval);
+                            } else {
+                                updateProjectStatus(projectId, { kind: 'in_progress', processed: Math.round((progress / total) * 100), total });
+                            }
+                        }, 1000);
+                    }, (index + 1) * 2000);
+                });
+            }, [updateProjectStatus]);
+
+            return (
+                <AppContext.Provider value={{
+                    projects, selectedProjects, setSelectedProjects,
+                    currentView, setCurrentView, currentProjectId, setCurrentProjectId,
+                    initiateProjects, updateProjectStatus
+                }}>
+                    {children}
+                </AppContext.Provider>
+            );
+        }
+
+        // Components
+        function Header() {
+            const { currentView } = useContext(AppContext);
+            
+            if (currentView === 'dashboard') {
+                return (
+                    <header className="bg-gray-900 text-white h-14">
+                        <div className="flex items-center justify-between h-full px-6">
+                            <div className="flex items-center space-x-6">
+                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
+                                <nav className="flex items-center space-x-6 text-sm">
+                                    <span className="flex items-center space-x-1">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11.251.068a.5.5 0 01.227.58L9.677 6.5H13a.5.5 0 01.364.843l-8 8.5a.5.5 0 01-.842-.49L6.323 9.5H3a.5.5 0 01-.364-.843l8-8.5a.5.5 0 01.615-.09z"/></svg>
+                                        <span>Feed</span>
+                                    </span>
+                                    <span className="flex items-center space-x-1">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fillRule="evenodd" d="M4 5a2 2 0 012-2 1 1 0 000 2H6a2 2 0 00-2 2v6a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-1a1 1 0 100-2h1a4 4 0 014 4v8a4 4 0 01-4 4H6a4 4 0 01-4-4V7a4 4 0 014-4z"/></svg>
+                                        <span>Tasks</span>
+                                    </span>
+                                    <span className="flex items-center space-x-1">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zm0 4a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zm0 4a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z"/></svg>
+                                        <span>Projects</span>
+                                    </span>
+                                    <span className="flex items-center space-x-1">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/></svg>
+                                        <span>Documents</span>
+                                    </span>
+                                </nav>
+                            </div>
+                            
+                            <div className="flex items-center space-x-4">
+                                <div className="text-2xl font-bold">Filevine</div>
+                                <input
+                                    type="text"
+                                    placeholder="Search for a project, contact, tag, etc."
+                                    className="bg-gray-800 text-white placeholder-gray-400 px-4 py-2 rounded text-sm w-80"
+                                />
+                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zm0 16a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg>
+                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"/></svg>
+                                <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center text-sm font-medium">JK</div>
+                            </div>
+                        </div>
+                    </header>
+                );
+            }
+            
+            return (
+                <header className="bg-gray-900 text-white h-14">
+                    <div className="flex items-center justify-between h-full px-6">
+                        <div className="flex items-center space-x-6">
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
+                            <nav className="flex items-center space-x-6 text-sm">
+                                <span className="flex items-center space-x-1">
+                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11.251.068a.5.5 0 01.227.58L9.677 6.5H13a.5.5 0 01.364.843l-8 8.5a.5.5 0 01-.842-.49L6.323 9.5H3a.5.5 0 01-.364-.843l8-8.5a.5.5 0 01.615-.09z"/></svg>
+                                    <span>Feed</span>
+                                </span>
+                                <span className="flex items-center space-x-1">
+                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fillRule="evenodd" d="M4 5a2 2 0 012-2 1 1 0 000 2H6a2 2 0 00-2 2v6a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-1a1 1 0 100-2h1a4 4 0 014 4v8a4 4 0 01-4 4H6a4 4 0 01-4-4V7a4 4 0 014-4z"/></svg>
+                                    <span>Tasks</span>
+                                </span>
+                                <span className="flex items-center space-x-1">
+                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zm0 4a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zm0 4a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z"/></svg>
+                                    <span>Project Hub</span>
+                                </span>
+                                <span className="flex items-center space-x-1">
+                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/></svg>
+                                    <span>Documents</span>
+                                </span>
+                            </nav>
+                        </div>
+                        
+                        <div className="flex items-center space-x-4">
+                            <div className="text-2xl font-bold">Filevine</div>
+                            <input
+                                type="text"
+                                placeholder="Search for a project"
+                                className="bg-gray-800 text-white placeholder-gray-400 px-4 py-2 rounded text-sm w-64"
+                            />
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+                        </div>
+                    </div>
+                </header>
+            );
+        }
+
+        function StatusBadge({ status }) {
+            return (
+                <span className={`status-badge inline-flex items-center rounded border ${getStatusColor(status)}`}>
+                    {getStatusLabel(status)}
+                </span>
+            );
+        }
+
+        function Dashboard() {
+            const { projects, selectedProjects, setSelectedProjects, setCurrentView, setCurrentProjectId, initiateProjects } = useContext(AppContext);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [statusFilter, setStatusFilter] = useState(new Set());
+            const [currentPage, setCurrentPage] = useState(1);
+            const [showConfirmModal, setShowConfirmModal] = useState(false);
+            const [sortBy, setSortBy] = useState('initiatedAt');
+            const [sortDir, setSortDir] = useState('desc');
+            const pageSize = 10;
+
+            const stats = useMemo(() => ({
+                completed: projects.filter(p => p.status.kind === 'completed').length,
+                inProgress: projects.filter(p => p.status.kind === 'in_progress').length,
+                pending: projects.filter(p => p.status.kind === 'pending').length,
+                notInitiated: projects.filter(p => p.status.kind === 'not_initiated').length,
+            }), [projects]);
+
+            const filteredProjects = useMemo(() => {
+                return projects.filter(project => {
+                    const matchesSearch = project.projectName.toLowerCase().includes(searchTerm.toLowerCase());
+                    const matchesStatus = statusFilter.size === 0 || statusFilter.has(project.status.kind);
+                    return matchesSearch && matchesStatus;
+                }).sort((a, b) => {
+                    if (sortBy === 'projectName') {
+                        return sortDir === 'asc' 
+                            ? a.projectName.localeCompare(b.projectName)
+                            : b.projectName.localeCompare(a.projectName);
+                    }
+                    if (sortBy === 'initiatedAt') {
+                        const aDate = a.initiatedAt ? new Date(a.initiatedAt).getTime() : 0;
+                        const bDate = b.initiatedAt ? new Date(b.initiatedAt).getTime() : 0;
+                        return sortDir === 'asc' ? aDate - bDate : bDate - aDate;
+                    }
+                    return 0;
+                });
+            }, [projects, searchTerm, statusFilter, sortBy, sortDir]);
+
+            const paginatedProjects = useMemo(() => {
+                const startIndex = (currentPage - 1) * pageSize;
+                return filteredProjects.slice(startIndex, startIndex + pageSize);
+            }, [filteredProjects, currentPage]);
+
+            const totalPages = Math.ceil(filteredProjects.length / pageSize);
+
+            return (
+                <div className="min-h-screen bg-gray-50">
+                    <div className="bg-white border-b px-6 py-3">
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold text-gray-900">Advanced</span>
+                            <select className="border border-gray-300 rounded px-3 py-1 text-sm">
+                                <option>Org</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="flex">
+                        <aside className="w-56 bg-white border-r min-h-screen">
+                            <div className="p-4">
+                                <input
+                                    type="text"
+                                    placeholder="Filter Menu"
+                                    className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm mb-4"
+                                />
+                                <nav>
+                                    <div className="flex items-center space-x-2 px-3 py-2 bg-cyan-50 text-cyan-600 rounded">
+                                        <div className="w-1.5 h-1.5 bg-cyan-600 rounded-full"></div>
+                                        <span className="font-medium text-sm">MedChron Dashboard</span>
+                                    </div>
+                                </nav>
+                            </div>
+                        </aside>
+
+                        <main className="flex-1 p-6">
+                            <h1 className="text-2xl font-bold text-gray-900 mb-6">MedChron Dashboard</h1>
+                            
+                            <div className="grid grid-cols-4 gap-4 mb-6">
+                                <div className="bg-white rounded-lg border p-4">
+                                    <div className="text-3xl font-bold text-gray-900">{stats.completed}</div>
+                                    <div className="text-sm text-gray-600 mt-1">Completed</div>
+                                </div>
+                                <div className="bg-white rounded-lg border p-4">
+                                    <div className="text-3xl font-bold text-gray-900">{stats.inProgress}</div>
+                                    <div className="text-sm text-gray-600 mt-1">In progress</div>
+                                </div>
+                                <div className="bg-white rounded-lg border p-4">
+                                    <div className="text-3xl font-bold text-gray-900">{stats.pending}</div>
+                                    <div className="text-sm text-gray-600 mt-1">Pending</div>
+                                </div>
+                                <div className="bg-white rounded-lg border p-4">
+                                    <div className="text-3xl font-bold text-gray-900">{stats.notInitiated}</div>
+                                    <div className="text-sm text-gray-600 mt-1">Not initiated</div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-lg border">
+                                <div className="p-4 border-b">
+                                    <input
+                                        type="text"
+                                        placeholder="Search by project name"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                    />
+                                    <div className="flex items-center space-x-2 mt-3">
+                                        <span className="text-sm text-gray-600">Filter by status:</span>
+                                        {['completed', 'in_progress', 'pending', 'not_initiated'].map(status => (
+                                            <button
+                                                key={status}
+                                                onClick={() => {
+                                                    const newSet = new Set(statusFilter);
+                                                    if (newSet.has(status)) newSet.delete(status);
+                                                    else newSet.add(status);
+                                                    setStatusFilter(newSet);
+                                                }}
+                                                className={`px-3 py-1 text-xs rounded-full border ${
+                                                    statusFilter.has(status) ? 'bg-cyan-100 text-cyan-700' : 'bg-white text-gray-600'
+                                                }`}
+                                            >
+                                                {status.replace('_', ' ')}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="bg-gray-50 border-b">
+                                            <th className="w-12 px-4 py-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedProjects.size === paginatedProjects.length && paginatedProjects.length > 0}
+                                                    onChange={() => {
+                                                        if (selectedProjects.size === paginatedProjects.length) {
+                                                            setSelectedProjects(new Set());
+                                                        } else {
+                                                            setSelectedProjects(new Set(paginatedProjects.map(p => p.projectId)));
+                                                        }
+                                                    }}
+                                                />
+                                            </th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Project name</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">MedChron status</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Initiation date</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Initiated by</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {paginatedProjects.map((project) => (
+                                            <tr key={project.projectId} className="hover:bg-gray-50">
+                                                <td className="px-4 py-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedProjects.has(project.projectId)}
+                                                        onChange={() => {
+                                                            const newSet = new Set(selectedProjects);
+                                                            if (newSet.has(project.projectId)) newSet.delete(project.projectId);
+                                                            else newSet.add(project.projectId);
+                                                            setSelectedProjects(newSet);
+                                                        }}
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        onClick={() => {
+                                                            setCurrentProjectId(project.projectId);
+                                                            setCurrentView('verification');
+                                                        }}
+                                                        className="text-blue-600 hover:underline text-sm"
+                                                    >
+                                                        {project.projectName}
+                                                    </button>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <StatusBadge status={project.status} />
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">{formatDate(project.initiatedAt)}</td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">{project.initiatedBy?.name || '--'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+
+                                <div className="px-4 py-3 border-t flex items-center justify-between">
+                                    <div className="text-sm text-gray-700">
+                                        {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, filteredProjects.length)} of {filteredProjects.length} MedChrons
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="px-2 py-1">«</button>
+                                        <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className="px-2 py-1">‹</button>
+                                        <span className="px-2 text-sm">Page {currentPage} of {totalPages || 1}</span>
+                                        <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className="px-2 py-1">›</button>
+                                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className="px-2 py-1">»</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            );
+        }
+
+        function ProjectVerification() {
+            const { projects, currentProjectId, setCurrentView, updateProjectStatus } = useContext(AppContext);
+            const [documents, setDocuments] = useState(() => generateMockDocuments());
+            const [expandedFolders, setExpandedFolders] = useState(new Set(['folder-Discovery', 'folder-Depositions', 'folder-Medical Records']));
+            
+            const project = projects.find(p => p.projectId === currentProjectId) || { projectName: 'Dixon v. Elm Street Pharmacy (12)', status: { kind: 'completed' } };
+            const includedCount = documents.reduce((sum, folder) => 
+                sum + (folder.children?.filter(d => d.included).length || 0), 0);
+
+            const toggleFolder = (folderId) => {
+                const newSet = new Set(expandedFolders);
+                if (newSet.has(folderId)) newSet.delete(folderId);
+                else newSet.add(folderId);
+                setExpandedFolders(newSet);
+            };
+
+            const toggleDocument = (folderId, docId) => {
+                setDocuments(prev => prev.map(folder => {
+                    if (folder.docId === folderId) {
+                        return {
+                            ...folder,
+                            children: folder.children.map(doc => 
+                                doc.docId === docId ? { ...doc, included: !doc.included } : doc
+                            )
+                        };
+                    }
+                    return folder;
+                }));
+            };
+
+            const toggleFolderSelection = (folderId) => {
+                setDocuments(prev => prev.map(folder => {
+                    if (folder.docId === folderId) {
+                        const newIncluded = !folder.included;
+                        return {
+                            ...folder,
+                            included: newIncluded,
+                            children: folder.children.map(doc => ({ ...doc, included: newIncluded }))
+                        };
+                    }
+                    return folder;
+                }));
+            };
+
+            return (
+                <div className="min-h-screen bg-white">
+                    {/* User Header */}
+                    <div className="bg-white border-b px-6 py-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-4">
+                                <button onClick={() => setCurrentView('dashboard')} className="text-gray-600">
+                                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 18l-6-6 6-6"/></svg>
+                                </button>
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium">
+                                        KF
+                                    </div>
+                                    <div>
+                                        <div className="font-semibold">Kaitlyn Foster</div>
+                                        <div className="text-xs text-gray-600">Kaitlyn Foster • (555) 201-2345 • kaitlynfoster@falconlegal.com</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <select className="border rounded px-3 py-1.5 text-sm">
+                                    <option>Discovery</option>
+                                </select>
+                                <button className="px-4 py-1.5 bg-cyan-500 text-white rounded text-sm font-medium">
+                                    Vitals
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex">
+                        {/* Sidebar */}
+                        <aside className="w-48 bg-white border-r min-h-screen">
+                            <div className="p-3">
+                                <input
+                                    type="text"
+                                    placeholder="Filter Menu"
+                                    className="w-full px-2 py-1 border border-gray-300 rounded text-xs mb-3"
+                                />
+                                <nav>
+                                    <div className="flex items-center space-x-2 px-2 py-1.5 bg-cyan-50 text-cyan-600 rounded">
+                                        <div className="w-1.5 h-1.5 bg-cyan-600 rounded-full"></div>
+                                        <span className="text-sm">MedChron</span>
+                                    </div>
+                                </nav>
+                            </div>
+                        </aside>
+
+                        {/* Main Content */}
+                        <main className="flex-1">
+                            {/* Project Header */}
+                            <div className="px-6 py-4 border-b">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h1 className="text-xl font-semibold">{project.projectName}</h1>
+                                        <div className="flex items-center space-x-2 mt-1">
+                                            <span className="text-sm text-gray-600">MedChron Status:</span>
+                                            <StatusBadge status={project.status} />
+                                        </div>
+                                    </div>
+                                    <button className="px-4 py-2 bg-cyan-500 text-white rounded text-sm font-medium">
+                                        Initiate MedChron
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Welcome Section */}
+                            <div className="text-center py-8 border-b">
+                                <div className="text-cyan-500 text-5xl mb-4">✚</div>
+                                <h2 className="text-xl font-semibold mb-2">Welcome to MedChron by Filevine</h2>
+                                <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+                                    MedChron uses AI to generate a comprehensive medical chronology based on all relevant
+                                    documents uploaded to this project, helping you quickly understand a patient's treatments,
+                                    diagnoses, and overall medical history.
+                                </p>
+                                <button className="mt-4 px-4 py-2 bg-cyan-500 text-white rounded text-sm font-medium">
+                                    Initiate MedChron
+                                </button>
+                            </div>
+
+                            {/* Documents Section */}
+                            <div className="px-6 py-4">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h3 className="font-semibold">Source documents</h3>
+                                        <p className="text-sm text-gray-600">{includedCount} documents from this project will be included as sources to initiate Medchron</p>
+                                    </div>
+                                    <button className="text-cyan-600 text-sm font-medium">+ Add documents</button>
+                                </div>
+
+                                <div className="flex items-center space-x-4 mb-4 text-sm text-gray-600">
+                                    <span>All statuses ▼</span>
+                                    <span>Collapse folders ↕</span>
+                                </div>
+
+                                {/* Document Tree */}
+                                <div className="border rounded">
+                                    <table className="w-full">
+                                        <thead>
+                                            <tr className="bg-gray-50 border-b">
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Name</th>
+                                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-600 uppercase">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {documents.map((folder) => (
+                                                <React.Fragment key={folder.docId}>
+                                                    <tr className="tree-row border-b">
+                                                        <td className="px-4 py-2">
+                                                            <div className="flex items-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={folder.included}
+                                                                    onChange={() => toggleFolderSelection(folder.docId)}
+                                                                    className="mr-2"
+                                                                />
+                                                                <button
+                                                                    onClick={() => toggleFolder(folder.docId)}
+                                                                    className="mr-2 text-gray-500"
+                                                                >
+                                                                    {expandedFolders.has(folder.docId) ? '▼' : '▶'}
+                                                                </button>
+                                                                <svg width="16" height="16" fill="#f59e0b" viewBox="0 0 20 20" className="mr-2">
+                                                                    <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
+                                                                </svg>
+                                                                <span className="text-sm">{folder.fileName}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right">
+                                                            {folder.included && (
+                                                                <span className="text-green-600 text-sm">✓</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                    {expandedFolders.has(folder.docId) && folder.children?.map((doc) => (
+                                                        <tr key={doc.docId} className="tree-row">
+                                                            <td className="px-4 py-2 pl-16">
+                                                                <div className="flex items-center">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={doc.included}
+                                                                        onChange={() => toggleDocument(folder.docId, doc.docId)}
+                                                                        className="mr-2"
+                                                                    />
+                                                                    <svg width="16" height="16" fill="#ef4444" viewBox="0 0 20 20" className="mr-2">
+                                                                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/>
+                                                                    </svg>
+                                                                    <span className="text-sm">{doc.fileName}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2 text-right">
+                                                                {doc.included ? (
+                                                                    <span className="text-green-600 text-sm font-medium">✓ Included</span>
+                                                                ) : (
+                                                                    <span className="text-gray-400 text-sm">✕ Excluded</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </React.Fragment>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="mt-4 text-sm text-gray-600">
+                                    {includedCount} documents from this project will be included as sources to initiate Medchron
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            );
+        }
+
+        function App() {
+            const { currentView } = useContext(AppContext);
+            
+            return (
+                <div>
+                    <Header />
+                    {currentView === 'dashboard' ? <Dashboard /> : <ProjectVerification />}
+                </div>
+            );
+        }
+
+        function Root() {
+            return (
+                <AppProvider>
+                    <App />
+                </AppProvider>
+            );
+        }
+
+        ReactDOM.render(<Root />, document.getElementById('root'));
+    </script>
+</body>
+</html>
