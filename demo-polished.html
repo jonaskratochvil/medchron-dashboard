@@ -24,8 +24,7 @@
             content: attr(data-tooltip);
             position: absolute;
             bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
+            right: 0;
             background: #1a1a1a;
             color: white;
             padding: 6px 10px;
@@ -39,8 +38,7 @@
             content: '';
             position: absolute;
             bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
+            right: 20px;
             border-top: 5px solid #1a1a1a;
             border-left: 5px solid transparent;
             border-right: 5px solid transparent;
@@ -183,6 +181,10 @@
                     });
                 });
                 
+                // Add new files for some completed projects (30% chance)
+                const hasNewFiles = status.kind === STATUS_TYPES.COMPLETE && Math.random() < 0.3;
+                const newFileCount = hasNewFiles ? Math.floor(Math.random() * 5) + 1 : 0;
+                
                 projects.push({
                     projectId: `proj-${i + 1}`,
                     projectName: i < projectNames.length ? projectNames[i] : `Case ${i + 1} v. Corporation`,
@@ -191,11 +193,28 @@
                     initiatedBy: user,
                     initiatedAt: hasBeenInitiated ? new Date(Date.now() - Math.random() * 180 * 24 * 60 * 60 * 1000).toISOString() : null,
                     lastCompletedDocs: status.kind === STATUS_TYPES.COMPLETE ? new Set(includedDocIds) : new Set(),
+                    hasNewFiles,
+                    newFileCount,
                 });
             }
             return projects;
         }
 
+        function generateMockNewFiles() {
+            const newFiles = [
+                { docId: 'new-1', name: 'Cityview_Hospital_Admission_Records_Smith_2025-01-14.pdf', type: 'pdf', included: false },
+                { docId: 'new-2', name: 'Dr_Jones_Orthopedics_Progress_Notes_2025-02-05.pdf', type: 'pdf', included: false },
+                { docId: 'new-3', name: 'Dr_Kim_Neurology_Office_Visit_2025-03-01.pdf', type: 'pdf', included: true },
+                { docId: 'new-4', name: 'Pharmacy_RX_History_Smith_2024-12-30.pdf', type: 'pdf', included: false },
+                { docId: 'new-5', name: 'Ptl_Responses_Def_Interrogatories_Set1_2025-02-15.docx', type: 'docx', included: false },
+                { docId: 'new-6', name: 'Def_First_Set_Interrogatories_to_Pltf_Smith_2025-01-20.docx', type: 'docx', included: true },
+                { docId: 'new-7', name: 'Def_Responses_Pltf_Interrogatories_Set1_2025-02-28.docx', type: 'docx', included: true },
+                { docId: 'new-8', name: 'Email_Client_Smith_CaseUpdate_2025-01-10.msg', type: 'msg', included: false },
+                { docId: 'new-9', name: 'Email_Client_Smith_DocumentsNeeded_2025-01-15.msg', type: 'msg', included: false },
+            ];
+            return newFiles.slice(0, Math.floor(Math.random() * 5) + 2); // Return 2-6 new files
+        }
+        
         function generateMockDocuments() {
             const docs = [];
             
@@ -236,7 +255,7 @@
                 case STATUS_TYPES.COMPLETE: 
                     return 'Complete';
                 case STATUS_TYPES.IN_PROGRESS: 
-                    return `In progress (${status.processed}/${status.total})`;
+                    return 'In progress';
                 case STATUS_TYPES.NOT_INITIATED: 
                     return 'Not initiated';
                 default: 
@@ -480,7 +499,17 @@
             );
         }
 
-        function StatusBadge({ status }) {
+        function StatusBadge({ status, hasNewFiles, inSidebar = false }) {
+            // For complete with new files, show only NEW badge
+            if (status.kind === STATUS_TYPES.COMPLETE && hasNewFiles) {
+                return (
+                    <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                        NEW
+                    </span>
+                );
+            }
+            
+            // Normal badge display for other statuses
             return (
                 <span className={`status-badge inline-flex items-center rounded border ${getStatusColor(status)}`}>
                     {getStatusLabel(status)}
@@ -502,9 +531,11 @@
                 complete: projects.filter(p => p.status.kind === STATUS_TYPES.COMPLETE).length,
                 inProgress: projects.filter(p => p.status.kind === STATUS_TYPES.IN_PROGRESS).length,
                 notInitiated: projects.filter(p => p.status.kind === STATUS_TYPES.NOT_INITIATED).length,
+                new: projects.filter(p => p.status.kind === STATUS_TYPES.COMPLETE && p.hasNewFiles).length,
             }), [projects]);
 
             const handleSort = (field) => {
+                console.log('Sorting by:', field);
                 if (sortBy === field) {
                     setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
                 } else {
@@ -519,6 +550,7 @@
                     if (activeFilter === 'not_initiated') return project.status.kind === STATUS_TYPES.NOT_INITIATED;
                     if (activeFilter === 'in_progress') return project.status.kind === STATUS_TYPES.IN_PROGRESS;
                     if (activeFilter === 'complete') return project.status.kind === STATUS_TYPES.COMPLETE;
+                    if (activeFilter === 'new') return project.status.kind === STATUS_TYPES.COMPLETE && project.hasNewFiles;
                     return true;
                 });
                 
@@ -531,6 +563,19 @@
                         const dateA = a.initiatedAt ? new Date(a.initiatedAt).getTime() : 0;
                         const dateB = b.initiatedAt ? new Date(b.initiatedAt).getTime() : 0;
                         comparison = dateA - dateB;
+                    } else if (sortBy === 'status') {
+                        const statusOrder = { 
+                            [STATUS_TYPES.COMPLETE]: 3,
+                            [STATUS_TYPES.IN_PROGRESS]: 2,
+                            [STATUS_TYPES.NOT_INITIATED]: 1
+                        };
+                        const orderA = statusOrder[a.status.kind] || 0;
+                        const orderB = statusOrder[b.status.kind] || 0;
+                        comparison = orderA - orderB;
+                        // Secondary sort by hasNewFiles for COMPLETE status
+                        if (comparison === 0 && a.status.kind === STATUS_TYPES.COMPLETE) {
+                            comparison = (b.hasNewFiles ? 1 : 0) - (a.hasNewFiles ? 1 : 0);
+                        }
                     }
                     return sortDirection === 'asc' ? comparison : -comparison;
                 });
@@ -642,6 +687,16 @@
                                 >
                                     Complete
                                 </button>
+                                <button
+                                    onClick={() => setActiveFilter('new')}
+                                    className={`px-6 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                                        activeFilter === 'new'
+                                            ? 'text-cyan-600 border-cyan-600'
+                                            : 'text-gray-500 border-transparent hover:text-gray-700'
+                                    }`}
+                                >
+                                    NEW
+                                </button>
                             </div>
 
                             <div className="bg-white">
@@ -670,25 +725,32 @@
                                             </th>
                                             <th className="px-4 py-3 text-left">
                                                 <button 
+                                                    type="button"
                                                     onClick={() => handleSort('projectName')}
-                                                    className="flex items-center space-x-1 text-xs font-medium text-gray-600 uppercase hover:text-gray-900"
+                                                    className="flex items-center space-x-1 text-xs font-medium text-gray-600 uppercase hover:text-gray-900 cursor-pointer"
                                                 >
                                                     <span>Project name</span>
-                                                    {sortBy === 'projectName' && (
-                                                        <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
+                                                    <span className="ml-1">{sortBy === 'projectName' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}</span>
                                                 </button>
                                             </th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">MedChron status</th>
                                             <th className="px-4 py-3 text-left">
                                                 <button 
+                                                    type="button"
+                                                    onClick={() => handleSort('status')}
+                                                    className="flex items-center space-x-1 text-xs font-medium text-gray-600 uppercase hover:text-gray-900 cursor-pointer"
+                                                >
+                                                    <span>MedChron status</span>
+                                                    <span className="ml-1">{sortBy === 'status' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}</span>
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 text-left">
+                                                <button 
+                                                    type="button"
                                                     onClick={() => handleSort('initiatedAt')}
-                                                    className="flex items-center space-x-1 text-xs font-medium text-gray-600 uppercase hover:text-gray-900"
+                                                    className="flex items-center space-x-1 text-xs font-medium text-gray-600 uppercase hover:text-gray-900 cursor-pointer"
                                                 >
                                                     <span>Initiation date</span>
-                                                    {sortBy === 'initiatedAt' && (
-                                                        <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                                                    )}
+                                                    <span className="ml-1">{sortBy === 'initiatedAt' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}</span>
                                                 </button>
                                             </th>
                                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Initiated by</th>
@@ -724,7 +786,7 @@
                                                     </button>
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <StatusBadge status={project.status} />
+                                                    <StatusBadge status={project.status} hasNewFiles={project.hasNewFiles} />
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-600">{formatDate(project.initiatedAt)}</td>
                                                 <td className="px-4 py-3 text-sm text-gray-600">{project.initiatedBy?.name || '--'}</td>
@@ -802,7 +864,9 @@
                 projectId: 'proj-1',
                 projectName: 'Dixon v. Elm Street Pharmacy',
                 documentCount: 8,
-                status: { kind: STATUS_TYPES.NOT_INITIATED }
+                status: { kind: STATUS_TYPES.NOT_INITIATED },
+                hasNewFiles: false,
+                newFileCount: 0
             };
             
             const [documents, setDocuments] = useState(() => {
@@ -811,10 +875,22 @@
                 // The lastCompletedDocs will be synced to match the initial state
                 return docs;
             });
+            const [newFiles, setNewFiles] = useState(() => {
+                return project.hasNewFiles ? generateMockNewFiles() : [];
+            });
+            const [selectedNewFiles, setSelectedNewFiles] = useState(() => {
+                // Select all new files by default
+                return new Set(newFiles.map(f => f.docId));
+            });
             const [expandedFolders, setExpandedFolders] = useState(new Set(['folder-0', 'folder-1', 'folder-4']));
             const [changesMade, setChangesMade] = useState(false);
             const [hoveredTooltip, setHoveredTooltip] = useState(false);
             const [hasUserModified, setHasUserModified] = useState(false);
+            const [isUpdating, setIsUpdating] = useState(false);
+            const [processedCount, setProcessedCount] = useState(0);
+            
+            // Check if there are new file changes
+            const hasNewFileChanges = selectedNewFiles.size !== newFiles.length;
             
             const isLocked = project.status.kind === STATUS_TYPES.IN_PROGRESS;
             const isComplete = project.status.kind === STATUS_TYPES.COMPLETE;
@@ -923,17 +999,85 @@
                 if (wasIncluded && !isIncluded) return 'removed';
                 return isIncluded ? 'included' : 'excluded';
             };
+            
+            const toggleNewFile = (fileId) => {
+                setSelectedNewFiles(prev => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(fileId)) {
+                        newSet.delete(fileId);
+                    } else {
+                        newSet.add(fileId);
+                    }
+                    return newSet;
+                });
+            };
+            
+            const updateMedChron = () => {
+                // Start updating animation
+                setIsUpdating(true);
+                const documentsToProcess = newFiles.length - selectedNewFiles.size;
+                setProcessedCount(0);
+                
+                // Simulate progress
+                const interval = setInterval(() => {
+                    setProcessedCount(prev => {
+                        if (prev < documentsToProcess - 1) {
+                            return prev + 1;
+                        }
+                        return prev;
+                    });
+                }, 400);
+                
+                // Simulate update process
+                setTimeout(() => {
+                    clearInterval(interval);
+                    setProcessedCount(documentsToProcess);
+                    
+                    // Remove deselected files from new files list
+                    const remainingFiles = newFiles.filter(f => selectedNewFiles.has(f.docId));
+                    setNewFiles(remainingFiles);
+                    
+                    // Reset selection to all remaining files
+                    setSelectedNewFiles(new Set(remainingFiles.map(f => f.docId)));
+                    
+                    // Update the project to remove hasNewFiles if no more new files
+                    if (remainingFiles.length === 0) {
+                        project.hasNewFiles = false;
+                    }
+                    
+                    // Stop updating animation
+                    setTimeout(() => {
+                        setIsUpdating(false);
+                        setHasUserModified(false);
+                        setChangesMade(false);
+                        setProcessedCount(0);
+                    }, 500);
+                }, 2000); // Simulate 2 second update
+            };
+            
+            const reviewFiles = () => {
+                // Mark all new files as reviewed and move them to regular sources
+                setNewFiles([]);
+                setSelectedNewFiles(new Set());
+                project.hasNewFiles = false;
+                // In real app, this would update the backend to mark files as reviewed
+            };
 
             return (
                 <div className="min-h-screen bg-white">
 
                     <div className="flex">
-                        <aside className="w-48 bg-white border-r min-h-screen">
+                        <aside className="w-56 bg-white border-r min-h-screen">
                             <div className="p-3">
                                 <nav>
-                                    <div className="flex items-center space-x-2 px-2 py-1.5 bg-cyan-50 text-cyan-600 rounded">
-                                        <div className="w-1.5 h-1.5 bg-cyan-600 rounded-full"></div>
-                                        <span className="text-sm">MedChron</span>
+                                    <div className="flex items-center justify-between px-2 py-1.5 bg-cyan-50 text-cyan-600 rounded">
+                                        <div className="flex items-center space-x-1.5">
+                                            <div className="w-1.5 h-1.5 bg-cyan-600 rounded-full"></div>
+                                            <span className="text-sm">MedChron</span>
+                                        </div>
+                                        {!isNotInitiated && (
+                                            <StatusBadge status={project.status} hasNewFiles={project.hasNewFiles} inSidebar={true} />
+                                        )}
                                     </div>
                                 </nav>
                             </div>
@@ -943,21 +1087,6 @@
                             <div className="px-6 py-4 border-b">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <h1 className="text-xl font-semibold">{project.projectName}</h1>
-                                        <div className="flex items-center space-x-2 mt-1">
-                                            {!isNotInitiated && (
-                                                <>
-                                                    <span className="text-sm text-gray-600">MedChron Status:</span>
-                                                    <StatusBadge status={project.status} />
-                                                </>
-                                            )}
-                                            {isNotInitiated && (
-                                                <div className="flex items-center space-x-2">
-                                                    <span className="text-sm text-gray-500">MedChron Status:</span>
-                                                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">Not Initiated</span>
-                                                </div>
-                                            )}
-                                        </div>
                                     </div>
                                 </div>
 
@@ -982,7 +1111,7 @@
                                     </button>
                                 )}
                                 {/* Show only Launch button for Complete (no changes) */}
-                                {isComplete && !changesMade && (
+                                {isComplete && !changesMade && !hasNewFileChanges && (
                                     <button 
                                         onClick={() => console.log('Launching MedChron...')}
                                         className="px-6 py-2.5 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 font-medium"
@@ -1010,8 +1139,8 @@
                                         </div>
                                     </div>
                                 )}
-                                {/* Show both Launch and Update buttons side by side when Complete with changes */}
-                                {isComplete && hasUserModified && changesMade && (
+                                {/* Show both Launch and Update buttons side by side when Complete with changes or new file changes */}
+                                {isComplete && ((hasUserModified && changesMade) || hasNewFileChanges) && !isUpdating && (
                                     <div className="flex flex-col items-center">
                                         <div className="flex items-center space-x-4">
                                             <button 
@@ -1021,27 +1150,119 @@
                                                 Launch MedChron
                                             </button>
                                             <button 
-                                                onClick={handleAction}
+                                                onClick={hasNewFileChanges ? updateMedChron : handleAction}
                                                 className="px-6 py-2.5 border-2 border-cyan-500 text-cyan-500 rounded-lg hover:bg-cyan-50 font-medium"
                                             >
                                                 Update MedChron
                                             </button>
                                         </div>
                                         <div className="flex items-center space-x-3 mt-2">
-                                            {changeStats.added > 0 && (
+                                            {!hasNewFileChanges && changeStats.added > 0 && (
                                                 <span className="text-xs text-green-600 font-medium">
                                                     +{changeStats.added} added
                                                 </span>
                                             )}
-                                            {changeStats.removed > 0 && (
+                                            {!hasNewFileChanges && changeStats.removed > 0 && (
                                                 <span className="text-xs text-red-600 font-medium">
                                                     -{changeStats.removed} removed
+                                                </span>
+                                            )}
+                                            {hasNewFileChanges && (
+                                                <span className="text-xs text-red-600 font-medium">
+                                                    -{newFiles.length - selectedNewFiles.size} removed
                                                 </span>
                                             )}
                                         </div>
                                     </div>
                                 )}
+                                
+                                {/* Show updating spinner */}
+                                {isUpdating && (
+                                    <div className="flex flex-col items-center">
+                                        <button 
+                                            disabled
+                                            className="px-6 py-2.5 bg-cyan-500 text-white rounded-lg font-medium flex items-center justify-center"
+                                        >
+                                            <div className="spinner"></div>
+                                            Updating MedChron...
+                                        </button>
+                                        <div className="mt-2 text-sm text-blue-600">
+                                            {processedCount} of {newFiles.length - selectedNewFiles.size} documents processed
+                                        </div>
+                                    </div>
+                                )}
                             </div>
+
+                            {/* New Files Section */}
+                            {newFiles.length > 0 && isComplete && (
+                                <div className="px-6 py-4 border-t">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center space-x-2">
+                                            <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                                            <h3 className="font-semibold">Newly added documents</h3>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            {selectedNewFiles.size === newFiles.length && (
+                                                <button
+                                                    onClick={reviewFiles}
+                                                    className="tooltip flex items-center space-x-1 px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                                                    data-tooltip="Mark all documents as reviewed and add to sources"
+                                                >
+                                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+                                                    </svg>
+                                                    <span>Reviewed</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-gray-600 mb-4">
+                                        {newFiles.length} newly added documents to MedChron in this project
+                                    </p>
+                                    <div className="border rounded">
+                                        <table className="w-full">
+                                            <tbody>
+                                                {newFiles.map((file) => (
+                                                    <tr key={file.docId} className="border-b last:border-b-0 hover:bg-gray-50">
+                                                        <td className="px-4 py-2">
+                                                            <div className="flex items-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedNewFiles.has(file.docId)}
+                                                                    onChange={() => toggleNewFile(file.docId)}
+                                                                    className="mr-3"
+                                                                />
+                                                                <div className="flex items-center space-x-2">
+                                                                    {file.type === 'pdf' ? (
+                                                                        <svg width="16" height="16" className="text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-5L9 2H4z"/>
+                                                                        </svg>
+                                                                    ) : file.type === 'docx' ? (
+                                                                        <svg width="16" height="16" className="text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-5L9 2H4z"/>
+                                                                        </svg>
+                                                                    ) : (
+                                                                        <svg width="16" height="16" className="text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-5L9 2H4z"/>
+                                                                        </svg>
+                                                                    )}
+                                                                    <span className="text-sm">{file.name}</span>
+                                                                    {!selectedNewFiles.has(file.docId) && (
+                                                                        <span className="change-indicator removed ml-2">removed</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="mt-4 text-center">
+                                        <button className="text-sm text-cyan-600 hover:text-cyan-700">View all documents</button>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="px-6 py-4">
                                 <div className="flex items-center justify-between mb-4">
