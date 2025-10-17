@@ -549,7 +549,7 @@
                     if (activeFilter === 'all') return true;
                     if (activeFilter === 'not_initiated') return project.status.kind === STATUS_TYPES.NOT_INITIATED;
                     if (activeFilter === 'in_progress') return project.status.kind === STATUS_TYPES.IN_PROGRESS;
-                    if (activeFilter === 'complete') return project.status.kind === STATUS_TYPES.COMPLETE;
+                    if (activeFilter === 'complete') return project.status.kind === STATUS_TYPES.COMPLETE && !project.hasNewFiles;
                     if (activeFilter === 'new') return project.status.kind === STATUS_TYPES.COMPLETE && project.hasNewFiles;
                     return true;
                 });
