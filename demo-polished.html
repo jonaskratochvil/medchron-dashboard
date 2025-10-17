@@ -702,14 +702,16 @@
                             <div className="bg-white">
                                 <div className="">
                                     <div className="flex items-center justify-between mb-3">
-                                        {selectedNotInitiated.length > 0 && (
-                                            <button
-                                                onClick={() => setShowConfirmModal(true)}
-                                                className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 text-sm font-medium transition-all"
-                                            >
-                                                Initialize ({selectedNotInitiated.length})
-                                            </button>
-                                        )}
+                                        <div className="flex items-center space-x-4">
+                                            {selectedNotInitiated.length > 0 && (
+                                                <button
+                                                    onClick={() => setShowConfirmModal(true)}
+                                                    className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 text-sm font-medium transition-all"
+                                                >
+                                                    Initiate MedChron ({selectedNotInitiated.length})
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -829,9 +831,9 @@
                     {showConfirmModal && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                             <div className="bg-white rounded-lg p-6 max-w-md shadow-xl slide-in">
-                                <h3 className="text-lg font-semibold mb-4">Initialize MedChron</h3>
+                                <h3 className="text-lg font-semibold mb-4">Initiate MedChron</h3>
                                 <p className="text-gray-600 mb-2">
-                                    You are about to initialize MedChron for {selectedNotInitiated.length} project{selectedNotInitiated.length > 1 ? 's' : ''}.
+                                    You are about to initiate MedChron for {selectedNotInitiated.length} project{selectedNotInitiated.length > 1 ? 's' : ''}.
                                 </p>
                                 <p className="text-sm text-gray-500 mb-6">
                                     Each project will use the default document selection for processing. You can customize document selection by visiting each project individually.
@@ -847,7 +849,7 @@
                                         onClick={handleBulkInitiate} 
                                         className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600"
                                     >
-                                        Initialize {selectedNotInitiated.length} Project{selectedNotInitiated.length > 1 ? 's' : ''}
+                                        Initiate {selectedNotInitiated.length} Project{selectedNotInitiated.length > 1 ? 's' : ''}
                                     </button>
                                 </div>
                             </div>
@@ -905,6 +907,9 @@
                 });
                 return docs;
             }, [documents]);
+            
+            // Total count - just use includedDocs, don't pre-count new files
+            const totalDocumentCount = includedDocs.length;
 
             const changeStats = useMemo(() => {
                 if (!isComplete || !project.lastCompletedDocs || !hasUserModified) return { added: 0, removed: 0 };
@@ -1056,11 +1061,39 @@
             };
             
             const reviewFiles = () => {
-                // Mark all new files as reviewed and move them to regular sources
+                // Add new files to the documents list
+                const updatedDocuments = [...documents];
+                
+                // Find or create a folder for new documents
+                let newDocsFolder = updatedDocuments.find(f => f.name === 'Recently Added');
+                if (!newDocsFolder) {
+                    newDocsFolder = {
+                        docId: 'folder-new',
+                        name: 'Recently Added',
+                        type: 'folder',
+                        included: true,
+                        children: []
+                    };
+                    updatedDocuments.unshift(newDocsFolder);
+                }
+                
+                // Add each new file to the folder
+                newFiles.forEach(file => {
+                    if (selectedNewFiles.has(file.docId)) {
+                        newDocsFolder.children.push({
+                            ...file,
+                            included: true
+                        });
+                    }
+                });
+                
+                // Update documents state
+                setDocuments(updatedDocuments);
+                
+                // Clear new files
                 setNewFiles([]);
                 setSelectedNewFiles(new Set());
                 project.hasNewFiles = false;
-                // In real app, this would update the backend to mark files as reviewed
             };
 
             return (
@@ -1271,10 +1304,7 @@
                                         <p className="text-sm text-gray-600">
                                             {isNotInitiated ? 
                                                 `${includedDocs.length} documents from this project will be included as sources to initiate MedChron` :
-                                                <>
-                                                    {includedDocs.length} documents will be included
-                                                    {isLocked && <span className="text-orange-600 ml-2">• Processing in progress - changes locked</span>}
-                                                </>
+                                                `${totalDocumentCount} documents are included`
                                             }
                                         </p>
                                     </div>
