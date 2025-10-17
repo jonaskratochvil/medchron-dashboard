@@ -1,6 +1,9 @@
 {
   "name": "medchron-dashboard",
   "version": 2,
+  "buildCommand": "echo 'Skipping build - static HTML only'",
+  "outputDirectory": ".",
+  "installCommand": "echo 'No installation needed'",
   "routes": [
     {
       "src": "/demo",
