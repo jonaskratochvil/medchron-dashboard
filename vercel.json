@@ -1,0 +1,14 @@
+{
+  "name": "medchron-dashboard",
+  "version": 2,
+  "routes": [
+    {
+      "src": "/demo",
+      "dest": "/demo-polished.html"
+    },
+    {
+      "src": "/",
+      "dest": "/demo-polished.html"
+    }
+  ]
+}
